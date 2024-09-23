@@ -54,7 +54,13 @@ export class WSDiscovery {
     await this.redis.ping()
 
     const list = await this.listIndexes()
+    console.log(list)
     // TODO load lua to redis
+
+    await this.redis.call(`FT.CREATE ${this.prefixClient}:${CHNL},
+      'PREFIX', '1', `${PREFIX}:${SOCKET}:`,
+      'SCHEMA', CHANNEL, 'TAG',
+`)
   }
 
   async registerServer(serverIp: string, ttl?: number) {
