@@ -1,11 +1,12 @@
 import { deepEqual } from 'assert/strict'
+import { describe, it, before, after } from 'node:test'
 
 import Redis from 'ioredis'
 
 import { clearRedis, WSDiscoveryForTests } from './utils'
 import { rejects } from 'assert'
 
-describe.only('Channels', () => {
+describe('Channels', () => {
   const redis = new Redis({ lazyConnect: true })
   const wsd = new WSDiscoveryForTests({
     redis,
@@ -22,7 +23,6 @@ describe.only('Channels', () => {
 
   before(async () => {
     await wsd.connect()
-    await clearRedis(redis, '')
 
     serverId1 = await wsd.registerServer(ip1)
     serverId2 = await wsd.registerServer(ip2)
@@ -33,7 +33,7 @@ describe.only('Channels', () => {
   })
 
   after(async () => {
-    // await clearRedis(redis, '')
+    await clearRedis(redis, '')
     await redis.quit()
   })
 

@@ -1,12 +1,10 @@
 #! WARNING
 # Don't remove 127.0.0.1 from any ports mapping
 
-version: "3.9"
 services:
   redis:
     # image: redis/redis-stack:7.2.0-v12
     image: redis/redis-stack:7.2.0-v12
-    restart: always
     ports:
       - "127.0.0.1:6379:6379"
     environment:

@@ -1,4 +1,5 @@
 import { strictEqual, rejects } from 'assert'
+import { describe, it, before, after } from 'node:test'
 
 import Redis from 'ioredis'
 
@@ -85,17 +86,11 @@ describe('Server', () => {
     }) 
   })
 
-  it('server ttl expires', async function () {
-    this.slow(5000)
-
-    const ip1 = '1.1.1.1'
-
+  it('server ttl expires', async () => {
     const sid = await wsd.registerServer(ip1, 1)
-    
-    await sleep(500)
     strictEqual(await wsd.getServerIp(sid), ip1)
 
-    await sleep(500)
+    await sleep(1000)
     strictEqual(await wsd.getServerIp(sid), null)
   })
 })

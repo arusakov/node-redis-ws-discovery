@@ -1,4 +1,5 @@
 import { strictEqual, rejects } from 'assert'
+import { describe, it, before, after } from 'node:test'
 
 import Redis from 'ioredis'
 
@@ -89,13 +90,19 @@ describe('Client', () => {
     })
   })
 
-  it('client ttl expires', async function () {
-    this.slow(5000)
-
+  it('client ttl expires', async () => {
     const cid = await wsd.registerClient(serverId1, 1, 1)
     strictEqual(await wsd.getServerIdByClientId(cid), serverId1)
     
     await sleep(1000)
+    strictEqual(await wsd.getServerIdByClientId(cid), 0)
+  })
+
+  it('delete client', async () => {
+    const cid = await wsd.registerClient(serverId2, 2, 2)
+
+    strictEqual(await wsd.getServerIdByClientId(cid), serverId2)
+    strictEqual(await wsd.deleteClient(cid), true)
     strictEqual(await wsd.getServerIdByClientId(cid), 0)
   })
 })

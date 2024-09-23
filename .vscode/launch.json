@@ -11,15 +11,17 @@
       "skipFiles": [
         "<node_internals>/**"
       ],
-      "program": "${workspaceRoot}/node_modules/.bin/mocha",
-      "args": [
-        "--timeout",
-        "9999999"
+      "program": "${file}",
+      "runtimeArgs": [
+        "--test",
+        "--test-concurrency=1",
+        "--require",
+        "ts-node/register"
       ],
       "env": {
-        "NODE_ENV": "test",
-        "TS_NODE_PROJECT": "test/tsconfig.json"
-      }
+        "NODE_ENV": "test"
+      },
+      "outputCapture": "std"
     }
   ]
 }

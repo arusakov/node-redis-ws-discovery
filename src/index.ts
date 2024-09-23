@@ -128,8 +128,9 @@ export class WSDiscovery {
     return updated === 1
   }
 
-  deleteClient(clientId: number) {
-    return this.redis.del(this.getClientKey(clientId))
+  async deleteClient(clientId: number) {
+    const deleted = await this.redis.del(this.getClientKey(clientId))
+    return deleted === 1
   }
 
   protected getServerKey(serverId: number) {
