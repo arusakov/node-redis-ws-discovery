@@ -1,0 +1,32 @@
+{
+  "name": "redis-ws-discovery",
+  "version": "0.0.1",
+  "description": "Redis service discovery for WebSocket servers and clients",
+  "main": "dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arusakov/redis-ws-discovery.git"
+  },
+  "bugs": {
+    "url": "https://github.com/arusakov/redis-ws-discovery/issues"
+  },
+  "author": "Aleksandr Rusakov <aleksandr.s.rusakov@gmail.com>",
+  "license": "MIT",
+  "private": false,
+  "devDependencies": {
+    "@types/mocha": "10.0.8",
+    "@types/node": "22.5.4",
+    "c8": "10.1.2",
+    "ioredis": "5.4.1",
+    "mocha": "10.7.3",
+    "ts-node": "10.9.2",
+    "typescript": "5.6.2"
+  },
+  "scripts": {
+    "build": "tsc --outDir dist -p .",
+    "compile:test": "tsc --noEmit -p test",
+    "compile": "tsc --noEmit -p .",
+    "coverage": "c8 --reporter=text --reporter=text-summary yarn test",
+    "test": "TS_NODE_PROJECT=test/tsconfig.json mocha"
+  }
+}
