@@ -3,7 +3,7 @@ name: Main CI
 on: [push]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     container: node:20-alpine
 
@@ -16,7 +16,7 @@ jobs:
       - run: yarn install --frozen-lockfile
       - run: yarn compile
       - run: yarn test:coverage
-        ens:
+        env:
           REDIS_HOST: redis
           REDIS_PORT: 6379
 
