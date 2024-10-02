@@ -20,7 +20,7 @@ jobs:
           REDIS_HOST: redis
           REDIS_PORT: 6379
       # for codecov
-      - run: apk add git curl gnupg coreutils
+      # - run: apk add git curl gnupg coreutils
       - uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
