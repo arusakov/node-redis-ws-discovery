@@ -1,4 +1,4 @@
 node-redis-ws-discovery
 =======================
 
-TODO
+![CI Status](https://github.com/arusakov/node-redis-ws-discovery/actions/workflows/test.yml/badge.svg?branch=main)
