@@ -1,6 +1,16 @@
-import type { Redis } from "ioredis"
+import { Redis } from "ioredis"
+
 import { WSDiscovery } from "../src"
 import { ID } from "../src/constants"
+
+export const createRedis = () => {
+
+  return new Redis({
+    lazyConnect: true,
+    host: process.env.REDIS_HOST,
+    port: Number(process.env.REDIS_PORT),
+  })
+}
 
 export const sleep = (ms: number) => new Promise((resolve) => {
   setTimeout(resolve, ms)

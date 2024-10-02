@@ -1,13 +1,11 @@
 import { strictEqual, rejects } from 'assert'
 import { describe, it, before, after } from 'node:test'
 
-import Redis from 'ioredis'
-
-import { clearRedis, sleep, WSDiscoveryForTests } from './utils'
+import { clearRedis, createRedis, sleep, WSDiscoveryForTests } from './utils'
 import { MAX_INT_ID } from '../src/constants'
 
 describe('Client', () => {
-  const redis = new Redis({ lazyConnect: true })
+  const redis = createRedis()
   const wsd = new WSDiscoveryForTests({
     redis,
   })
