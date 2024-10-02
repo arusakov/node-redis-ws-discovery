@@ -25,6 +25,7 @@ jobs:
         with:
           fail_ci_if_error: true
           files: ./coverage/lcov.info
+          os: alpine
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true # optional (default = false)
 
