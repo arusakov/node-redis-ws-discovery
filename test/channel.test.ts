@@ -1,13 +1,11 @@
 import { deepEqual } from 'assert/strict'
 import { describe, it, before, after } from 'node:test'
 
-import Redis from 'ioredis'
-
-import { clearRedis, WSDiscoveryForTests } from './utils'
+import { clearRedis, createRedis, WSDiscoveryForTests } from './utils'
 import { rejects } from 'assert'
 
 describe('Channels', () => {
-  const redis = new Redis({ lazyConnect: true })
+  const redis = createRedis()
   const wsd = new WSDiscoveryForTests({
     redis,
   })
