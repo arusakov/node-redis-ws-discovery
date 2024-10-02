@@ -4,11 +4,10 @@ import { WSDiscovery } from "../src"
 import { ID } from "../src/constants"
 
 export const createRedis = () => {
-
   return new Redis({
     lazyConnect: true,
     host: process.env.REDIS_HOST,
-    port: Number(process.env.REDIS_PORT),
+    port: Number(process.env.REDIS_PORT) || undefined,
   })
 }
 

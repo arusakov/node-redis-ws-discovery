@@ -19,4 +19,10 @@ jobs:
         env:
           REDIS_HOST: redis
           REDIS_PORT: 6379
+      - uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: true
+          files: ./coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true # optional (default = false)
 
