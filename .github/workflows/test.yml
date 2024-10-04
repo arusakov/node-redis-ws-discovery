@@ -1,0 +1,29 @@
+name: test
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: node:20-alpine
+
+    services:
+      redis:
+        image: redis/redis-stack:7.2.0-v12
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: yarn install --frozen-lockfile
+      - run: yarn compile
+      - run: yarn test:coverage
+        env:
+          REDIS_HOST: redis
+          REDIS_PORT: 6379
+      # for codecov
+      - run: apk add git curl gnupg coreutils
+      - uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: true
+          file: ./coverage/lcov.info
+          os: alpine
+          token: ${{ secrets.CODECOV_TOKEN }}
