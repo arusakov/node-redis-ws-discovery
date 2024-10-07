@@ -57,9 +57,7 @@ export class WSDiscovery {
     console.log(list)
     // TODO load lua to redis
 
-    await this.redis.call(`FT.CREATE ${this.prefixClient}:${CHNL}       'PREFIX', '1', `${PREFIX}:${SOCKET}:`,
-      'SCHEMA', CHANNEL, 'TAG',
-`)
+    // await this.redis.call(`FT.CREATE ${this.prefixClient}:index_${CHNL} PREFIX 1 ${this.prefixClient}:${CLNT}: SCHEMA ${CHNL} TAG`)
   }
 
   async registerServer(serverIp: string, ttl?: number) {
