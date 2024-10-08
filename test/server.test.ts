@@ -15,7 +15,7 @@ describe('Server', () => {
   })
 
   after(async () => {
-    await clearRedis(redis, '')
+    await clearRedis(redis, wsd.prefix)
     await redis.quit()
   })
 
