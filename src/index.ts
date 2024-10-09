@@ -230,8 +230,8 @@ export class WSDiscovery {
       this.indexClntChnl,
       `@${CHNL}:{${channel}}`,
       'WITHCURSOR',
-      '"COUNT"', size,
-    ) as [[1, string[]], number]
+      'COUNT', size,
+    ) as [[number, string[]], number]
 
     clients.push(...result[0][1])
 

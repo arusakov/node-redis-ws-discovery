@@ -3,8 +3,7 @@
 
 services:
   redis:
-    # image: redis/redis-stack:7.2.0-v12
-    image: redis/redis-stack:7.2.0-v12
+    image: redis/redis-stack:7.2.0-v13
     ports:
       - "127.0.0.1:6379:6379"
     environment:
