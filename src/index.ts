@@ -1,5 +1,5 @@
 import type { Callback, Redis, Result } from 'ioredis'
-import { CHNL, CLNT, ID, IP, MAX_INT_ID, SID, SRVR, TTL_DEFAULT } from './constants'
+import { __MIGRATIONS, CHNL, CLNT, ID, IP, MAX_INT_ID, SID, SRVR, TTL_DEFAULT } from './constants'
 import { sleep } from './utils'
 
 export type WSDiscoveryOptions = {
@@ -43,7 +43,10 @@ export class WSDiscovery {
   readonly ttlServer: number
   readonly ttlClient: number
   
+  readonly indexClntChnl: string
+  
   protected readonly redis: Redis
+
 
   constructor({
     redis,
@@ -60,6 +63,8 @@ export class WSDiscovery {
     this.prefix = `${prefix}:`
     this.prefixServer = `${this.prefix}${SRVR}:`
     this.prefixClient = `${this.prefix}${CLNT}:`
+
+    this.indexClntChnl = `${this.prefix}__index_${CLNT}_${CHNL}`
   }
 
   async connect() {
@@ -184,7 +189,7 @@ export class WSDiscovery {
       script,
       1,
       [this.getClientKey(clientId), CHNL, channel],
-    )
+    ) as Promise<string[]>
   }
 
   async removeChannel(clientId: number, channel: string) {
@@ -217,6 +222,26 @@ export class WSDiscovery {
     )
   }
 
+  async getClientsByChannel(channel: string, size = 100) {
+    const clients: string[] = []
+
+    const result = await this.redis.call(
+      'FT.AGGREGATE',
+      this.indexClntChnl,
+      `@${CHNL}:{${channel}}`,
+      'WITHCURSOR',
+      '"COUNT"', size,
+    ) as [[1, string[]], number]
+
+    clients.push(...result[0][1])
+
+    const res2 = await this.redis.call(
+      'FT.'
+    )
+
+    return clients
+  }
+
   protected getClientKey(clientId: number) {
     return this.prefixClient + clientId
   }
@@ -247,20 +272,26 @@ export class WSDiscovery {
 
   protected async migrate() {
     const migrations: Array<[string, string[]]> = [
-      ['FT.CREATE', `${this.prefix}__index_${CLNT}_${CHNL} PREFIX 1 ${this.prefixClient} SCHEMA ${CHNL} TAG`.split(' ')],
+      ['FT.CREATE', `${this.indexClntChnl} PREFIX 1 ${this.prefixClient} SCHEMA ${CHNL} TAG`.split(' ')],
     ]
 
     const token = `${Date.now()}_${Math.floor(Math.random() * 99999999)}`
-    const migrationsKey = this.prefix + '__migrations'
+    const migrationsKey = this.prefix + __MIGRATIONS
     const lockKey = migrationsKey + '_lock'
 
     await this.lock(lockKey, token)
 
-    for (let i = 0; i < migrations.length; ++i) {
-      const migration = migrations[i]
+    const applyedMigrations = new Set(await this.redis.smembers(migrationsKey))
 
+    for (let i = 0; i < migrations.length; ++i) {
+      const migrationId = 'm' + i 
+      if (applyedMigrations.has(migrationId)) {
+        continue
+      }
+
+      const migration = migrations[i]
       await this.redis.call(migration[0], migration[1])
-      await this.redis.sadd(migrationsKey, 'm' + i)
+      await this.redis.sadd(migrationsKey, migrationId)
     }
     await this.unlock(lockKey, token)
   }

@@ -1,8 +1,7 @@
-import { deepEqual } from 'assert/strict'
+import { deepEqual, equal, rejects } from 'assert/strict'
 import { describe, it, before, after } from 'node:test'
 
 import { clearRedis, createRedis, WSDiscoveryForTests } from './utils'
-import { rejects } from 'assert'
 
 describe('Channels', () => {
   const redis = createRedis()
@@ -79,6 +78,23 @@ describe('Channels', () => {
     await rejects(() => wsd.removeChannel(clientId1, ''), (err) => {
       return err instanceof Error && err.message === 'Empty channel is not allowed'
     })
+  })
+
+  it('getClientsByChannel() empty', async () => {
+    deepEqual(
+      await wsd.getClientsByChannel('xyz'),
+      [],
+    )
+  })
+
+  it('getClientsByChannel() one', async () => {
+    await wsd.addChannel(clientId2, 'abc')
+    await wsd.addChannel(clientId3, 'xyz')
+
+    deepEqual(
+      await wsd.getClientsByChannel('xyz'),
+      [],
+    )
   })
  
 })
