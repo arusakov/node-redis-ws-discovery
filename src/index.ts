@@ -3,7 +3,7 @@ import { resolve } from 'path'
 
 import type { Callback, Redis, Result } from 'ioredis'
 
-import { CHNL, CLNT, ID, IP, LUA, MAX_INT_ID, SID, SRVR, TTL_DEFAULT } from './constants'
+import { CHNL, CLNT, ID, IP, LUA, SID, SRVR, TTL_DEFAULT } from './constants'
 import { sleep } from './utils'
 
 export type WSDiscoveryOptions = {
@@ -63,12 +63,18 @@ declare module "ioredis" {
       channel: string,
       callback?: Callback<0 | 1>
     ): Result<0 | 1, Context>;
+
+    incWithReset(
+      key: string,
+      callback?: Callback<number>
+    ): Result<number, Context>;
   }
 }
 
 enum CustomScripts {
   CHANNEL_ADD = 'channelAdd',
-  CHANNEL_REMOVE = 'channelRemove'
+  CHANNEL_REMOVE = 'channelRemove',
+  INC_WITH_RESET = 'incWithReset',
 }
 
 export class WSDiscovery {
@@ -110,11 +116,7 @@ export class WSDiscovery {
     assertTTL(ttl)
     
     const serverIdKey = `${this.prefixServer}${ID}`
-
-    const serverId = await this.redis.incr(serverIdKey)
-    if (serverId >= MAX_INT_ID) {
-      await this.redis.set(serverIdKey, 0)
-    }
+    const serverId = await this.redis.incWithReset(serverIdKey)
 
     const serverKey = this.getServerKey(serverId)
 
@@ -144,10 +146,7 @@ export class WSDiscovery {
     assertTTL(ttl)
 
     const clientIdKey = `${this.prefixClient}${ID}`
-    const clientId = await this.redis.incr(clientIdKey)
-    if (clientId >= MAX_INT_ID) {
-      await this.redis.set(clientIdKey, 0)
-    }
+    const clientId = await this.redis.incWithReset(clientIdKey)
 
     const clientKey = this.getClientKey(clientId)
 
@@ -308,6 +307,10 @@ export class WSDiscovery {
       [CustomScripts.CHANNEL_REMOVE]: {
         keys: 1,
         readOnly: false,
+      },
+      [CustomScripts.INC_WITH_RESET]: {
+        keys: 1,
+        readOnly: false,
       }
     }
 
@@ -354,6 +357,10 @@ export class WSDiscovery {
     }
 
     await this.unlock(lockKey, token)
+  }
+
+  protected async incrementWithReset(key: string) {
+    const id = await this.redis.incr(key)
   }
 
 }

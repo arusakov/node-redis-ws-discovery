@@ -3,6 +3,8 @@ import { Redis } from "ioredis"
 import { WSDiscovery } from "../src"
 import { ID } from "../src/constants"
 
+export const MAX_INT_ID = 2 ** 30
+
 export const createRedis = () => {
   return new Redis({
     lazyConnect: true,

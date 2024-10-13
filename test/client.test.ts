@@ -1,7 +1,7 @@
 import { equal, rejects } from 'assert/strict'
 import { describe, it, before, after } from 'node:test'
 
-import { MAX_INT_ID } from '../src/constants'
+import { MAX_INT_ID } from './utils'
 
 import { clearRedis, createRedis, sleep, WSDiscoveryForTests } from './utils'
 
