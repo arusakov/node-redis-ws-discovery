@@ -155,7 +155,6 @@ export class WSDiscovery {
     const clientId = await this.redis.incWithReset(clientIdKey)
 
     const clientKey = this.getClientKey(clientId)
-
     await this.redis.hsetWithTTL(
       clientKey,
       ttl || this.ttlClient,
