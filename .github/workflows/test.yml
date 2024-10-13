@@ -28,22 +28,22 @@ jobs:
 
       - run: yarn compile
 
-      - if: env.CODECOVERAGE == 'true'
+      - if: env.COVERAGE == 'true'
         run: yarn test:coverage
         env:
           REDIS_HOST: redis
           REDIS_PORT: 6379
 
-      - if: env.CODECOVERAGE != 'true'
+      - if: env.COVERAGE != 'true'
         run: yarn test:all
         env:
           REDIS_HOST: redis
           REDIS_PORT: 6379
 
-      - if: env.CODECOVERAGE == 'true'
+      - if: env.COVERAGE == 'true'
         run: apk add git curl gnupg coreutils
 
-      - if: env.CODECOVERAGE == 'true'
+      - if: env.COVERAGE == 'true'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
