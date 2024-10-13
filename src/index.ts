@@ -137,21 +137,14 @@ export class WSDiscovery {
     return clientId
   }
 
-  async getClient(clientId: number, fields: ClientFields[] = [CHNL, SID, SRVR]) {
-    return this.redis.hmget(
-      this.getClientKey(clientId),
-      ...fields,
-    )
-  }
-
-  /**
-   * 
-   * @returns 
-   * 0 - if client is not
-   */
-  async getServerIdByClientId(clientId: number) {
+  async getClientServer(clientId: number) {
     const serverId = await this.redis.hget(this.getClientKey(clientId), SRVR)
     return Number(serverId)
+  }
+
+  async getClientChannels(clientId: number) {
+    const channels = await this.redis.hget(this.getClientKey(clientId), CHNL)
+    return channels ? channels.split(',') : []
   }
 
   async updateClientTTL(clientId: number, ttl?: number) {
@@ -177,36 +170,32 @@ export class WSDiscovery {
         local key = KEYS[1]
         local chnl_key = ARGV[1]
         local chnl_arg = ARGV[2]
+
         local chnl_str = redis.call('HGET', key, chnl_key)
-
-        local chnl = {}
         for match in chnl_str:gmatch('([^,]+)') do
-          table.insert(chnl, match)
-        end
-
-        local exists = false
-        for _, c in ipairs(chnl) do
-          if c == chnl_arg then
-            exists = true
-            break
+          if chnl_arg == match then
+            return 0
           end
         end
 
-        if exists then
-          return chnl
+        if chnl_str == '' then
+          chnl_str = chnl_arg
+        else
+          chnl_str = chnl_str .. ',' .. chnl_arg
         end
 
-        table.insert(chnl, chnl_arg)
-        redis.call('HSET', key, chnl_key, table.concat(chnl, ','))      
+        redis.call('HSET', key, chnl_key, chnl_str)
 
-        return chnl
+        return 1
       `.trim()
 
-    return this.redis.eval(
+    const result = await this.redis.eval(
       script,
       1,
       [this.getClientKey(clientId), CHNL, channel],
-    ) as Promise<string[]>
+    ) as 0 | 1
+
+    return result === 1
   }
 
   async removeChannel(clientId: number, channel: string) {
@@ -220,23 +209,31 @@ export class WSDiscovery {
         local chnl_str = redis.call('HGET', key, chnl_key)
 
         local chnl = {}
+        local removed = false
         for match in chnl_str:gmatch('([^,]+)') do
           if match ~= chnl_arg then
             table.insert(chnl, match)
+          else
+            removed = true
           end
         end
 
-        redis.call('HSET', key, chnl_key, table.concat(chnl, ','))      
+        if removed then
+          redis.call('HSET', key, chnl_key, table.concat(chnl, ','))
+          return 1
+        end
 
-        return chnl
+        return 0
       `
         .trim()
 
-    return this.redis.eval(
+    const result = await this.redis.eval(
       script,
       1,
       [this.getClientKey(clientId), CHNL, channel],
-    )
+    ) as 0 | 1
+
+    return result === 1
   }
 
   async getClientsByChannel(channel: string, batch = 100): Promise<ClientWithServer[]> {
@@ -329,11 +326,10 @@ export class WSDiscovery {
 
     await this.lock(lockKey, token)
 
-    const applyedMigrations = new Set(await this.redis.smembers(migrationsKey))
-
     for (let i = 0; i < migrations.length; ++i) {
       const migrationId = 'm' + i 
-      if (applyedMigrations.has(migrationId)) {
+      const applied = await this.redis.sismember(migrationsKey, migrationId)
+      if (applied) {
         continue
       }
 
@@ -345,6 +341,7 @@ export class WSDiscovery {
         .sadd(migrationsKey, migrationId)
         .exec()
     }
+
     await this.unlock(lockKey, token)
   }
 

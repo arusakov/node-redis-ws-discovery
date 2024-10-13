@@ -1,9 +1,10 @@
 import { deepEqual, rejects } from 'assert/strict'
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 
-import { CLNT, SRVR } from '../src/constants'
+import { CHNL, CLNT, SRVR } from '../src/constants'
 
 import { clearRedis, createRedis, WSDiscoveryForTests } from './utils'
+import { equal } from 'assert'
 
 describe('Channels', () => {
   const redis = createRedis()
@@ -45,26 +46,26 @@ describe('Channels', () => {
   })
 
   it('addChannel() OK', async () => {
-    deepEqual(
+    equal(
       await wsd.addChannel(clientId1, 'abc'),
-      ['abc'],
+      true,
     )
 
-    deepEqual(
+    equal(
       await wsd.addChannel(clientId1, 'abc'),
-      ['abc'],
+      false,
     )
   })
 
   it('addChannel() 3 channels', async () => {
-    const result1 = await wsd.addChannel(clientId2, 'abc')
-    deepEqual(result1, ['abc'])
+    await wsd.addChannel(clientId2, 'abc')
+    await wsd.addChannel(clientId2, 'xyz')
+    await wsd.addChannel(clientId2, 'lmn')
 
-    const result2 = await wsd.addChannel(clientId2, 'xyz')
-    deepEqual(result2, ['abc', 'xyz'])
-
-    const result3 = await wsd.addChannel(clientId2, 'lmn')
-    deepEqual(result3, ['abc', 'xyz', 'lmn'])
+    deepEqual(
+      await wsd.getClientChannels(clientId2),
+      ['abc', 'xyz', 'lmn'],
+    )
   })
 
   it('addChannel() validation', async () => {
@@ -74,14 +75,20 @@ describe('Channels', () => {
   })
 
   it('removeChanel()', async () => {
-    const result1 = await wsd.addChannel(clientId3, 'abc')
-    deepEqual(result1, ['abc'])
+    equal(
+      await wsd.addChannel(clientId3, 'abc'),
+      true,
+    )
 
-    const result2 = await wsd.removeChannel(clientId3, 'abc')
-    deepEqual(result2, [])
+    equal(
+      await wsd.removeChannel(clientId3, 'abc'),
+      true,
+    )
 
-    const result3 = await wsd.removeChannel(clientId3, 'abc')
-    deepEqual(result3, [])
+    equal(
+      await wsd.removeChannel(clientId3, 'abc'),
+      false,
+    )
   })
 
   it('removeChannel() validation', async () => {
