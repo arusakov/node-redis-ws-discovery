@@ -10,10 +10,12 @@ jobs:
     services:
       redis-stack:
         image: redis/redis-stack:7.2.0-v12
-        ports: [6379:6379]
+        ports:
+          - 6379:6379
       redis-8:
         image: redis:8.0-M01
-        ports: [6380:6379]
+        ports:
+          - 6380:6379
 
     steps:
       - uses: actions/checkout@v4
