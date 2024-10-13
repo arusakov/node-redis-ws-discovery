@@ -1,7 +1,7 @@
 import { Redis } from "ioredis"
 
 import { WSDiscovery } from "../src"
-import { ID } from "../src/constants"
+import { __MIGRATIONS, ID } from "../src/constants"
 
 export const createRedis = () => {
   return new Redis({
@@ -20,8 +20,9 @@ export const clearRedis = async (redis: Redis, prefix: string) => {
   do {
     const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', prefix + '*')
 
-    if (keys.length) {
-      await redis.del(...(keys.filter((k) => !k.startsWith(prefix + '__'))))
+    const keysForDelete = keys.filter((k) => !k.startsWith(prefix + '__'))
+    if (keysForDelete.length) {
+      await redis.del(...keysForDelete)
     }
     cursor = nextCursor
   } while (cursor !== '0')
@@ -42,5 +43,9 @@ export class WSDiscoveryForTests extends WSDiscovery {
 
   getClientTTL(id: number) {
     return this.redis.ttl(this.getClientKey(id))
+  }
+
+  lockForTests(ttl: number) {
+    return this.lock(this.getMigrationsLockKey(), 'test', ttl)
   }
 }

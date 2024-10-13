@@ -94,30 +94,7 @@ export class WSDiscovery {
   }
 
   async connect() {
-    type ScriptData = {
-      keys: number
-      readOnly: boolean
-    }    
-    const scripts: Record<CustomScripts, ScriptData> = {
-      [CustomScripts.CHANNEL_ADD]: {
-        keys: 1,
-        readOnly: false,
-      },
-      [CustomScripts.CHANNEL_REMOVE]: {
-        keys: 1,
-        readOnly: false,
-      }
-    }
-
-    for (const [scriptName, scriptData] of Object.entries(scripts)) {
-      this.redis.defineCommand(scriptName, {
-        lua: await readFile(resolve(__dirname, '..', LUA, `${scriptName}.${LUA}`), 'utf8'),
-        numberOfKeys: scriptData.keys,
-        readOnly: scriptData.readOnly,
-      })
-    }
-
-    await this.redis.ping()
+    await this.defineCommands()
     await this.migrate()
   }
 
@@ -273,15 +250,23 @@ export class WSDiscovery {
     return this.prefixClient + clientId
   }
 
-  protected async lock(key: string, token: string) {
+  protected getMigrationsKey() {
+    return this.prefix + '__migrations'
+  }
 
-    for (let i = 0; i < 1000; ++i) {
-      const result = await this.redis.set(key, token, 'EX', 30, 'NX')
+  protected getMigrationsLockKey() {
+    return this.getMigrationsKey() + '_lock'
+  }
+
+  protected async lock(key: string, token: string, ttl: number) {
+
+    for (let i = 0; i < 60; ++i) {
+      const result = await this.redis.set(key, token, 'EX', ttl, 'NX')
       if (result) {
         return
       }
 
-      await sleep(500)
+      await sleep(1000)
     }
     throw new Error(`can not take redis lock on key=${key}`)  
   }
@@ -296,17 +281,42 @@ export class WSDiscovery {
     `, 1, key, token)
   }
 
+  protected async defineCommands() {
+    type ScriptData = {
+      keys: number
+      readOnly: boolean
+    }    
+    const scripts: Record<CustomScripts, ScriptData> = {
+      [CustomScripts.CHANNEL_ADD]: {
+        keys: 1,
+        readOnly: false,
+      },
+      [CustomScripts.CHANNEL_REMOVE]: {
+        keys: 1,
+        readOnly: false,
+      }
+    }
+
+    for (const [scriptName, scriptData] of Object.entries(scripts)) {
+      this.redis.defineCommand(scriptName, {
+        lua: await readFile(resolve(__dirname, '..', LUA, `${scriptName}.${LUA}`), 'utf8'),
+        numberOfKeys: scriptData.keys,
+        readOnly: scriptData.readOnly,
+      })
+    }
+  }
+
   protected async migrate() {
     const migrations: Array<[string, string[]]> = [
       ['FT.CREATE', `${this.indexClntChnl} PREFIX 1 ${this.prefixClient} SCHEMA ${CHNL} TAG`.split(' ')],
     ]
 
     const token = `${Date.now()}_${Math.floor(Math.random() * 99999999)}`
-    const migrationsKey = this.prefix + __MIGRATIONS
-    const lockKey = migrationsKey + '_lock'
-
-    await this.lock(lockKey, token)
-
+    const lockKey = this.getMigrationsLockKey()
+  
+    await this.lock(lockKey, token, 30)
+    
+    const migrationsKey = this.getMigrationsKey()
     for (let i = 0; i < migrations.length; ++i) {
       const migrationId = 'm' + i 
       const applied = await this.redis.sismember(migrationsKey, migrationId)

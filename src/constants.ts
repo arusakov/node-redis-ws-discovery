@@ -14,3 +14,4 @@ export const LUA = 'lua'
 export const MAX_INT_ID = 2 ** 30
 
 export const __MIGRATIONS = '__migrations'
+export const _LOCK = '_lock'
