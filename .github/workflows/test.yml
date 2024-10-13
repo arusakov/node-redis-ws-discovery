@@ -11,50 +11,39 @@ jobs:
             coverage: true
           - image: redis:8.0-M01
             coverage: false
-        node:
-          - version: 20.x
-            coverage: true
-          - version: 22.x
-            coverage: false
 
     runs-on: ubuntu-latest
+    container: node:20-alpine
 
     services:
       redis:
         image: ${{ matrix.redis.image }}
-        ports:
-          - 6379:6379
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node.version }}
-          cache: yarn
-          cache-dependency-path: yarn.lock
 
       - run: yarn install --frozen-lockfile
 
       - run: yarn compile
 
-      - run: echo "COVERAGE=${{ matrix.redis.coverage }}${{ matrix.node.coverage }}" >> "$GITHUB_ENV"
+      - run: echo "COVERAGE=${{ matrix.redis.coverage }}" >> "$GITHUB_ENV"
 
-      - if: env.COVERAGE == 'truetrue'
+      - if: env.COVERAGE == 'true'
         run: yarn test:coverage
         env:
           REDIS_HOST: redis
           REDIS_PORT: 6379
 
-      - if: env.COVERAGE != 'truetrue'
+      - if: env.COVERAGE != 'true'
         run: yarn test:all
         env:
           REDIS_HOST: redis
           REDIS_PORT: 6379
 
-      - if: env.COVERAGE == 'truetrue'
+      - if: env.COVERAGE == 'true'
         run: apk add git curl gnupg coreutils
 
-      - if: env.COVERAGE == 'truetrue'
+      - if: env.COVERAGE == 'true'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
