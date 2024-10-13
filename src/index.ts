@@ -13,9 +13,14 @@ export type WSDiscoveryOptions = {
 
 
 export type ClientWithServer = {
-  [SID]: number
+  [CLNT]: number
   [SRVR]: number 
 }
+
+export type ClientFields =
+  | typeof SID
+  | typeof CHNL
+  | typeof SRVR
 
 
 const assertTTL = (ttl?: number): void | never => {
@@ -132,6 +137,13 @@ export class WSDiscovery {
     return clientId
   }
 
+  async getClient(clientId: number, fields: ClientFields[] = [CHNL, SID, SRVR]) {
+    return this.redis.hmget(
+      this.getClientKey(clientId),
+      ...fields,
+    )
+  }
+
   /**
    * 
    * @returns 
@@ -227,42 +239,56 @@ export class WSDiscovery {
     )
   }
 
-  async getClientsByChannel(channel: string, size = 10): Promise<ClientWithServer[]> {
+  async getClientsByChannel(channel: string, batch = 100): Promise<ClientWithServer[]> {
     type KeyAndKey = ['__key', string]
     type AggregateAndCursorResponse = [[1, ...KeyAndKey[]], number]
 
-    let [result, cursor] = await this.redis.call(
+    let [aggregateResult, cursor] = await this.redis.call(
       'FT.AGGREGATE',
       this.indexClntChnl,
       `@${CHNL}:{${channel}}`,
       'LOAD', 1, '@__key',
       'WITHCURSOR',
-      'COUNT', size,
+      'COUNT', batch,
     ) as AggregateAndCursorResponse
 
     const keys: string[] = []
   
     while (true) {
-      keys.push(...((result.slice(1) as KeyAndKey[]).map(([_key, key]) => key)))
+      keys.push(...((aggregateResult.slice(1) as KeyAndKey[]).map(([_key, key]) => key)))
       if (!cursor) {
         break
       }
 
-      [result, cursor] = await this.redis.call(
+      [aggregateResult, cursor] = await this.redis.call(
         'FT.CURSOR', 'READ', this.indexClntChnl, cursor
       ) as AggregateAndCursorResponse
     }
 
-    const clients = await this.redis.pipeline(
+    const hgetResults = await this.redis.pipeline(
       keys.map((k) => ['hget', k, SRVR]),
     ).exec()
 
-    return keys.map((k, index) => ({
-      sid: clients[index][0].
-    }))
-    
+    if (!hgetResults) {
+      throw new Error('multiple hget error')
+    }
 
-    return res2
+    const results: ClientWithServer[] = []
+
+    for (const [index, key] of keys.entries()) {
+      const [err, serverId] = hgetResults[index]
+
+      if (err) {
+        continue
+      }
+
+      results.push({
+        [CLNT]: Number(key.substring(this.prefixClient.length)),
+        [SRVR]: Number(serverId),
+      })
+    }    
+
+    return results
   }
 
   protected getClientKey(clientId: number) {
@@ -277,7 +303,6 @@ export class WSDiscovery {
         return
       }
 
-      console.log(result)
       await sleep(500)
     }
     throw new Error(`can not take redis lock on key=${key}`)  
@@ -313,8 +338,12 @@ export class WSDiscovery {
       }
 
       const migration = migrations[i]
-      await this.redis.call(migration[0], migration[1])
-      await this.redis.sadd(migrationsKey, migrationId)
+      // TODO there can be logical errors inside transaction!!
+      await this.redis
+        .multi()
+        .call(migration[0], migration[1])
+        .sadd(migrationsKey, migrationId)
+        .exec()
     }
     await this.unlock(lockKey, token)
   }

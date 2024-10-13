@@ -1,8 +1,9 @@
-import { strictEqual, rejects } from 'assert'
+import { equal, rejects } from 'assert/strict'
 import { describe, it, before, after } from 'node:test'
 
-import { clearRedis, createRedis, sleep, WSDiscoveryForTests } from './utils'
 import { MAX_INT_ID } from '../src/constants'
+
+import { clearRedis, createRedis, sleep, WSDiscoveryForTests } from './utils'
 
 describe('Server', () => {
   const redis = createRedis()
@@ -25,17 +26,17 @@ describe('Server', () => {
   it('registerServer() OK', async () => {
     const sid = await wsd.registerServer(ip1)
     
-    strictEqual(typeof sid, 'number')
+    equal(typeof sid, 'number')
 
     const ip = await wsd.getServerIp(sid)
-    strictEqual(ip, ip1)
+    equal(ip, ip1)
   })
 
   it('registerServer() twice', async () => {
     const sid1 = await wsd.registerServer(ip1)
     const sid2 = await wsd.registerServer(ip2)
     
-    strictEqual(sid1 + 1, sid2)
+    equal(sid1 + 1, sid2)
   })
 
 
@@ -53,7 +54,7 @@ describe('Server', () => {
     await wsd.registerServer('abc')
 
     const newId = await wsd.registerServer('bcd')
-    strictEqual(newId, 1)  
+    equal(newId, 1)  
   })
 
   it('updateServerTTL()', async () => {
@@ -63,8 +64,8 @@ describe('Server', () => {
 
     const ttl = await wsd.getServerTTL(sid)
 
-    strictEqual(ttl > 1000 * 0.99, true)
-    strictEqual(ttl <= 1000, true)
+    equal(ttl > 1000 * 0.99, true)
+    equal(ttl <= 1000, true)
   })
 
   it('updateServerTTL() expired', async () => {
@@ -72,7 +73,7 @@ describe('Server', () => {
 
     const result = await wsd.updateServerTTL(sid, 10)
 
-    strictEqual(result, false)
+    equal(result, false)
   })
 
   it('updateServerTTL() bad ttl', async () => {
@@ -86,9 +87,9 @@ describe('Server', () => {
 
   it('server ttl expires', async () => {
     const sid = await wsd.registerServer(ip1, 1)
-    strictEqual(await wsd.getServerIp(sid), ip1)
+    equal(await wsd.getServerIp(sid), ip1)
 
     await sleep(1000)
-    strictEqual(await wsd.getServerIp(sid), null)
+    equal(await wsd.getServerIp(sid), null)
   })
 })

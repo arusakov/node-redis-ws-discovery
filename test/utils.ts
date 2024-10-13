@@ -21,7 +21,6 @@ export const clearRedis = async (redis: Redis, prefix: string) => {
     const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', prefix + '*')
 
     if (keys.length) {
-      console.log(keys)
       await redis.del(...(keys.filter((k) => !k.startsWith(prefix + '__'))))
     }
     cursor = nextCursor
