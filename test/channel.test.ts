@@ -1,8 +1,9 @@
-import { deepEqual } from 'assert/strict'
-import { describe, it, before, after } from 'node:test'
+import { deepEqual, rejects } from 'assert/strict'
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
+
+import { CLNT, SRVR } from '../src/constants'
 
 import { clearRedis, createRedis, WSDiscoveryForTests } from './utils'
-import { rejects } from 'assert'
 
 describe('Channels', () => {
   const redis = createRedis()
@@ -22,16 +23,24 @@ describe('Channels', () => {
   before(async () => {
     await wsd.connect()
 
-    serverId1 = await wsd.registerServer(ip1)
-    serverId2 = await wsd.registerServer(ip2)
+    serverId1 = await wsd.registerServer(ip1, 300)
+    serverId2 = await wsd.registerServer(ip2, 300)
+  })
 
+  beforeEach(async () => {
     clientId1 = await wsd.registerClient(serverId1, 1)
     clientId2 = await wsd.registerClient(serverId1, 2)
     clientId3 = await wsd.registerClient(serverId2, 1)
   })
 
+  afterEach(async () => {
+    await wsd.deleteClient(clientId1)
+    await wsd.deleteClient(clientId2)
+    await wsd.deleteClient(clientId3)
+  })
+
   after(async () => {
-    await clearRedis(redis, '')
+    await clearRedis(redis, wsd.prefix)
     await redis.quit()
   })
 
@@ -80,5 +89,95 @@ describe('Channels', () => {
       return err instanceof Error && err.message === 'Empty channel is not allowed'
     })
   })
- 
+
+  it('getClientsByChannel() empty', async () => {
+    deepEqual(
+      await wsd.getClientsByChannel('xyz'),
+      [],
+    )
+  })
+
+  it('getClientsByChannel() return one', async () => {
+    await wsd.addChannel(clientId1, 'abc')
+
+    deepEqual(
+      await wsd.getClientsByChannel('xyz'),
+      [],
+    )
+  })
+
+  it('getClientsByChannel() one', async () => {
+    await wsd.addChannel(clientId1, 'abc')
+    await wsd.addChannel(clientId2, 'xyz')
+
+    deepEqual(
+      await wsd.getClientsByChannel('xyz'),
+      [{
+        [CLNT]: clientId2,
+        [SRVR]: serverId1,
+      }],
+    )
+  })
+
+  it('getClientsByChannel() return two', async () => {
+    await wsd.addChannel(clientId1, 'xyz')
+    await wsd.addChannel(clientId2, 'abc')
+    await wsd.addChannel(clientId3, 'xyz')
+
+    deepEqual(
+      await wsd.getClientsByChannel('xyz'),
+      [
+        {
+          [CLNT]: clientId1,
+          [SRVR]: serverId1,
+        },
+        {
+          [CLNT]: clientId3,
+          [SRVR]: serverId2,
+        },
+      ],
+    )
+  })
+
+  it('getClientsByChannel() with batch=1', async () => {
+    await wsd.addChannel(clientId1, 'xyz')
+    await wsd.addChannel(clientId3, 'xyz')
+
+    deepEqual(
+      await wsd.getClientsByChannel('xyz'),
+      [
+        {
+          [CLNT]: clientId1,
+          [SRVR]: serverId1,
+        },
+        {
+          [CLNT]: clientId3,
+          [SRVR]: serverId2,
+        },
+      ],
+    )
+  })
+
+  it('getClientsByChannel() multiple channels', async () => {
+    await wsd.addChannel(clientId1, 'xyz')
+    await wsd.addChannel(clientId1, 'abc')
+    await wsd.addChannel(clientId1, '123')
+
+    await wsd.addChannel(clientId3, 'qwerty')
+    await wsd.addChannel(clientId3, 'xyz')
+
+    deepEqual(
+      await wsd.getClientsByChannel('xyz'),
+      [
+        {
+          [CLNT]: clientId1,
+          [SRVR]: serverId1,
+        },
+        {
+          [CLNT]: clientId3,
+          [SRVR]: serverId2,
+        },
+      ],
+    )
+  }) 
 })

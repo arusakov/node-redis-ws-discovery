@@ -11,3 +11,5 @@ export const ID = 'id'
 export const CHNL = 'chnl'
 
 export const MAX_INT_ID = 2 ** 30
+
+export const __MIGRATIONS = '__migrations'
