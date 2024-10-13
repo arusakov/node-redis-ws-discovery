@@ -4,24 +4,47 @@ on: [push]
 
 jobs:
   test:
+    strategy:
+      matrix:
+        redis:
+          - image: redis/redis-stack:7.2.0-v12
+            coverage: true
+          - image: redis:8.0-M01
+            coverage: false
+
     runs-on: ubuntu-latest
     container: node:20-alpine
 
     services:
       redis:
-        image: redis/redis-stack:7.2.0-v12
+        image: ${{ matrix.redis.image }}
 
     steps:
       - uses: actions/checkout@v4
+
       - run: yarn install --frozen-lockfile
+
       - run: yarn compile
-      - run: yarn test:coverage
+
+      - run: echo "COVERAGE=${{ matrix.redis.coverage }}" >> "$GITHUB_ENV"
+
+      - if: env.COVERAGE == 'true'
+        run: yarn test:coverage
         env:
           REDIS_HOST: redis
           REDIS_PORT: 6379
-      # for codecov
-      - run: apk add git curl gnupg coreutils
-      - uses: codecov/codecov-action@v4
+
+      - if: env.COVERAGE != 'true'
+        run: yarn test:all
+        env:
+          REDIS_HOST: redis
+          REDIS_PORT: 6379
+
+      - if: env.COVERAGE == 'true'
+        run: apk add git curl gnupg coreutils
+
+      - if: env.COVERAGE == 'true'
+        uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
           file: ./coverage/lcov.info
