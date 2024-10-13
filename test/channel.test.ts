@@ -157,7 +157,7 @@ describe('Channels', () => {
     await wsd.addChannel(clientId3, 'xyz')
 
     deepEqual(
-      await wsd.getClientsByChannel('xyz'),
+      await wsd.getClientsByChannel('xyz', 1),
       [
         {
           [CLNT]: clientId1,
