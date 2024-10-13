@@ -1,5 +1,9 @@
+import { readFile } from 'fs/promises'
+import { resolve } from 'path'
+
 import type { Callback, Redis, Result } from 'ioredis'
-import { __MIGRATIONS, CHNL, CLNT, ID, IP, MAX_INT_ID, SID, SRVR, TTL_DEFAULT } from './constants'
+
+import { __MIGRATIONS, CHNL, CLNT, ID, IP, LUA, MAX_INT_ID, SID, SRVR, TTL_DEFAULT } from './constants'
 import { sleep } from './utils'
 
 export type WSDiscoveryOptions = {
@@ -38,12 +42,25 @@ const assertChannel = (channel: string): void | never => {
 // Add declarations
 declare module "ioredis" {
   interface RedisCommander<Context> {
-    myecho(
+    channelAdd(
       key: string,
-      argv: string,
-      callback?: Callback<string>
-    ): Result<string, Context>;
+      channelProp: string,
+      channel: string,
+      callback?: Callback<0 | 1>
+    ): Result<0 | 1, Context>;
+
+    channelRemove(
+      key: string,
+      channelProp: string,
+      channel: string,
+      callback?: Callback<0 | 1>
+    ): Result<0 | 1, Context>;
   }
+}
+
+enum CustomScripts {
+  CHANNEL_ADD = 'channelAdd',
+  CHANNEL_REMOVE = 'channelRemove'
 }
 
 export class WSDiscovery {
@@ -57,18 +74,17 @@ export class WSDiscovery {
   
   protected readonly redis: Redis
 
-
   constructor({
     redis,
     ttl = TTL_DEFAULT,
     prefix = 'wsd',
   }: WSDiscoveryOptions) {
-    this.redis = redis
-
     assertTTL(ttl.server)
     this.ttlServer = ttl.server || TTL_DEFAULT.server
     assertTTL(ttl.client)
     this.ttlClient = ttl.client || TTL_DEFAULT.client
+
+    this.redis = redis
 
     this.prefix = `${prefix}:`
     this.prefixServer = `${this.prefix}${SRVR}:`
@@ -78,6 +94,29 @@ export class WSDiscovery {
   }
 
   async connect() {
+    type ScriptData = {
+      keys: number
+      readOnly: boolean
+    }    
+    const scripts: Record<CustomScripts, ScriptData> = {
+      [CustomScripts.CHANNEL_ADD]: {
+        keys: 1,
+        readOnly: false,
+      },
+      [CustomScripts.CHANNEL_REMOVE]: {
+        keys: 1,
+        readOnly: false,
+      }
+    }
+
+    for (const [scriptName, scriptData] of Object.entries(scripts)) {
+      this.redis.defineCommand(scriptName, {
+        lua: await readFile(resolve(__dirname, '..', LUA, `${scriptName}.${LUA}`), 'utf8'),
+        numberOfKeys: scriptData.keys,
+        readOnly: scriptData.readOnly,
+      })
+    }
+
     await this.redis.ping()
     await this.migrate()
   }
@@ -165,78 +204,20 @@ export class WSDiscovery {
   async addChannel(clientId: number, channel: string) {
     assertChannel(channel)
 
-    const script = 
-      `
-        local key = KEYS[1]
-        local chnl_key = ARGV[1]
-        local chnl_arg = ARGV[2]
-
-        local chnl_str = redis.call('HGET', key, chnl_key)
-        for match in chnl_str:gmatch('([^,]+)') do
-          if chnl_arg == match then
-            return 0
-          end
-        end
-
-        if chnl_str == '' then
-          chnl_str = chnl_arg
-        else
-          chnl_str = chnl_str .. ',' .. chnl_arg
-        end
-
-        redis.call('HSET', key, chnl_key, chnl_str)
-
-        return 1
-      `.trim()
-
-    const result = await this.redis.eval(
-      script,
-      1,
-      [this.getClientKey(clientId), CHNL, channel],
-    ) as 0 | 1
-
+    const result = await this.redis.channelAdd(this.getClientKey(clientId), CHNL, channel)
     return result === 1
   }
 
   async removeChannel(clientId: number, channel: string) {
     assertChannel(channel)
  
-    const script = 
-      `
-        local key = KEYS[1]
-        local chnl_key = ARGV[1]
-        local chnl_arg = ARGV[2]
-        local chnl_str = redis.call('HGET', key, chnl_key)
-
-        local chnl = {}
-        local removed = false
-        for match in chnl_str:gmatch('([^,]+)') do
-          if match ~= chnl_arg then
-            table.insert(chnl, match)
-          else
-            removed = true
-          end
-        end
-
-        if removed then
-          redis.call('HSET', key, chnl_key, table.concat(chnl, ','))
-          return 1
-        end
-
-        return 0
-      `
-        .trim()
-
-    const result = await this.redis.eval(
-      script,
-      1,
-      [this.getClientKey(clientId), CHNL, channel],
-    ) as 0 | 1
-
+    const result = await this.redis.channelRemove(this.getClientKey(clientId), CHNL, channel)
     return result === 1
   }
 
   async getClientsByChannel(channel: string, batch = 100): Promise<ClientWithServer[]> {
+    assertChannel(channel)
+
     type KeyAndKey = ['__key', string]
     type AggregateAndCursorResponse = [[1, ...KeyAndKey[]], number]
 

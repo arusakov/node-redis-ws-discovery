@@ -97,14 +97,20 @@ describe('Channels', () => {
     })
   })
 
-  it('getClientsByChannel() empty', async () => {
+  it('getClientsByChannel() validation', async () => {
+    await rejects(() => wsd.getClientsByChannel(''), (err) => {
+      return err instanceof Error && err.message === 'Empty channel is not allowed'
+    })
+  })
+
+  it('getClientsByChannel() no clients', async () => {
     deepEqual(
       await wsd.getClientsByChannel('xyz'),
       [],
     )
   })
 
-  it('getClientsByChannel() return one', async () => {
+  it('getClientsByChannel() return empty array', async () => {
     await wsd.addChannel(clientId1, 'abc')
 
     deepEqual(

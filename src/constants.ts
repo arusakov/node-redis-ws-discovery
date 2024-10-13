@@ -9,6 +9,7 @@ export const IP = 'ip'
 export const SID = 'sid'
 export const ID = 'id'
 export const CHNL = 'chnl'
+export const LUA = 'lua'
 
 export const MAX_INT_ID = 2 ** 30
 
