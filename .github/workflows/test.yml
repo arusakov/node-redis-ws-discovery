@@ -4,34 +4,32 @@ on: [push]
 
 jobs:
   test:
+    strategy:
+      matrix:
+        redis:
+          - redis/redis-stack:7.2.0-v12
+          - redis:8.0-M01
+
     runs-on: ubuntu-latest
     container: node:20-alpine
 
     services:
       redis-stack:
-        image: redis/redis-stack:7.2.0-v12
-        ports:
-          - 6379:6379
-      redis-8:
-        image: redis:8.0-M01
-        ports:
-          - 6380:6379
+        image: ${{ matrix.redis }}
 
     steps:
+      - run: echo "REDIS_TAG=${{ matrix.redis }}" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - run: yarn install --frozen-lockfile
       - run: yarn compile
-      - run: yarn test:all
-        env:
-          REDIS_HOST: redis-stack
-          REDIS_PORT: 6379
       - run: yarn test:coverage
         env:
-          REDIS_HOST: redis-8
-          REDIS_PORT: 6378
+          REDIS_HOST: redis
+          REDIS_PORT: 6379
       # for codecov
       - run: apk add git curl gnupg coreutils
       - uses: codecov/codecov-action@v4
+        if: env.REDIS_TAG == 'redis/redis-stack:7.2.0-v12'
         with:
           fail_ci_if_error: true
           file: ./coverage/lcov.info
