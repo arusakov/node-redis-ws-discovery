@@ -47,35 +47,41 @@ type LockOpts = {
   sleepMs: number
 }
 
-// Add declarations
-declare module "ioredis" {
-  interface RedisCommander<Context> {
-    channelAdd(
-      key: string,
-      channelProp: string,
-      channel: string,
-      callback?: Callback<0 | 1>
-    ): Result<0 | 1, Context>;
-
-    channelRemove(
-      key: string,
-      channelProp: string,
-      channel: string,
-      callback?: Callback<0 | 1>
-    ): Result<0 | 1, Context>;
-
-    incWithReset(
-      key: string,
-      callback?: Callback<number>
-    ): Result<number, Context>;
-  }
-}
-
 enum CustomScripts {
   CHANNEL_ADD = 'channelAdd',
   CHANNEL_REMOVE = 'channelRemove',
   INC_WITH_RESET = 'incWithReset',
+  HSET_WITH_TTL  = 'hsetWithTTL',
 }
+
+
+// Add declarations
+declare module "ioredis" {
+  interface RedisCommander<Context> {
+    [CustomScripts.CHANNEL_ADD](
+      key: string,
+      channelProp: string,
+      channel: string,
+    ): Result<0 | 1, Context>;
+
+    [CustomScripts.CHANNEL_REMOVE](
+      key: string,
+      channelProp: string,
+      channel: string,
+    ): Result<0 | 1, Context>;
+
+    [CustomScripts.INC_WITH_RESET](
+      key: string,
+    ): Result<number, Context>;
+
+    [CustomScripts.HSET_WITH_TTL](
+      key: string,
+      ttl: number,
+      ...args: Array<string | number>,      
+    ): Result<number, Context>;
+  }
+}
+
 
 export class WSDiscovery {
   readonly prefix: string
@@ -119,11 +125,11 @@ export class WSDiscovery {
     const serverId = await this.redis.incWithReset(serverIdKey)
 
     const serverKey = this.getServerKey(serverId)
-
-    await this.redis.hset(serverKey, {
-      [IP]: serverIp,
-    })
-    await this.redis.expire(serverKey, ttl || this.ttlServer)
+    await this.redis.hsetWithTTL(
+      serverKey,
+      ttl || this.ttlServer,
+      IP, serverIp,
+    )
 
     return serverId
   }
@@ -150,12 +156,13 @@ export class WSDiscovery {
 
     const clientKey = this.getClientKey(clientId)
 
-    await this.redis.hset(clientKey, {
-      [SRVR]: serverId,
-      [SID]: sessionId,
-      [CHNL]: '',
-    })
-    await this.redis.expire(clientKey, ttl || this.ttlClient)
+    await this.redis.hsetWithTTL(
+      clientKey,
+      ttl || this.ttlClient,
+      SRVR, serverId,
+      SID, sessionId,
+      CHNL, '',
+    )
 
     return clientId
   }
@@ -309,6 +316,10 @@ export class WSDiscovery {
         readOnly: false,
       },
       [CustomScripts.INC_WITH_RESET]: {
+        keys: 1,
+        readOnly: false,
+      },
+      [CustomScripts.HSET_WITH_TTL]: {
         keys: 1,
         readOnly: false,
       }
