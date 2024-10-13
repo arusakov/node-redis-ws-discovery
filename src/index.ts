@@ -161,7 +161,7 @@ export class WSDiscovery {
       ttl || this.ttlClient,
       SRVR, serverId,
       SID, sessionId,
-      CHNL, '',
+      CHNL, ',',
     )
 
     return clientId
@@ -174,7 +174,7 @@ export class WSDiscovery {
 
   async getClientChannels(clientId: number) {
     const channels = await this.redis.hget(this.getClientKey(clientId), CHNL)
-    return channels ? channels.split(',') : []
+    return channels ? channels.split(',').slice(1, -1) : []
   }
 
   async updateClientTTL(clientId: number, ttl?: number) {
