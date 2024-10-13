@@ -4,12 +4,18 @@ on: [push]
 
 jobs:
   test:
+    strategy:
+      matrix:
+        redis:
+          - redis/redis-stack:7.2.0-v12
+          - redis:8.0-M01
+
     runs-on: ubuntu-latest
     container: node:20-alpine
 
     services:
       redis:
-        image: redis/redis-stack:7.2.0-v12
+        image: ${{ matrix.redis }}
 
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +28,7 @@ jobs:
       # for codecov
       - run: apk add git curl gnupg coreutils
       - uses: codecov/codecov-action@v4
+        if: ${{ matrix.redis }} == 'redis/redis-stack:7.2.0-v12'
         with:
           fail_ci_if_error: true
           file: ./coverage/lcov.info
