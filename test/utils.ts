@@ -1,7 +1,7 @@
 import { Redis } from "ioredis"
 
 import { WSDiscovery } from "../src"
-import { __MIGRATIONS, ID } from "../src/constants"
+import { ID } from "../src/constants"
 
 export const createRedis = () => {
   return new Redis({
@@ -45,7 +45,13 @@ export class WSDiscoveryForTests extends WSDiscovery {
     return this.redis.ttl(this.getClientKey(id))
   }
 
-  lockForTests(ttl: number) {
-    return this.lock(this.getMigrationsLockKey(), 'test', ttl)
+  lockForTests(ttlMs: number) {
+    return this.lock({
+      attempts: 5,
+      key: this.getMigrationsLockKey(),
+      sleepMs: 100,
+      token: 'test',
+      ttlMs,
+    })
   }
 }

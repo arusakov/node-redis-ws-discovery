@@ -3,7 +3,7 @@ import { resolve } from 'path'
 
 import type { Callback, Redis, Result } from 'ioredis'
 
-import { __MIGRATIONS, CHNL, CLNT, ID, IP, LUA, MAX_INT_ID, SID, SRVR, TTL_DEFAULT } from './constants'
+import { CHNL, CLNT, ID, IP, LUA, MAX_INT_ID, SID, SRVR, TTL_DEFAULT } from './constants'
 import { sleep } from './utils'
 
 export type WSDiscoveryOptions = {
@@ -37,6 +37,14 @@ const assertChannel = (channel: string): void | never => {
   if (!channel.length) {
     throw new Error('Empty channel is not allowed')
   }
+}
+
+type LockOpts = {
+  key: string
+  token: string
+  ttlMs: number
+  attempts: number
+  sleepMs: number
 }
 
 // Add declarations
@@ -258,15 +266,21 @@ export class WSDiscovery {
     return this.getMigrationsKey() + '_lock'
   }
 
-  protected async lock(key: string, token: string, ttl: number) {
+  protected async lock({
+    attempts, 
+    key,
+    sleepMs,
+    token,
+    ttlMs: ttl,
+  }: LockOpts) {
 
-    for (let i = 0; i < 60; ++i) {
-      const result = await this.redis.set(key, token, 'EX', ttl, 'NX')
+    for (let i = 0; i < attempts; ++i) {
+      const result = await this.redis.set(key, token, 'PX', ttl, 'NX')
       if (result) {
         return
       }
 
-      await sleep(1000)
+      await sleep(sleepMs)
     }
     throw new Error(`can not take redis lock on key=${key}`)  
   }
@@ -314,7 +328,13 @@ export class WSDiscovery {
     const token = `${Date.now()}_${Math.floor(Math.random() * 99999999)}`
     const lockKey = this.getMigrationsLockKey()
   
-    await this.lock(lockKey, token, 30)
+    await this.lock({
+      attempts: 60,
+      key: lockKey,
+      sleepMs: 1_000,
+      token,
+      ttlMs: 30_000,
+    })
     
     const migrationsKey = this.getMigrationsKey()
     for (let i = 0; i < migrations.length; ++i) {
