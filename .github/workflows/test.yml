@@ -7,7 +7,7 @@ jobs:
     strategy:
       matrix:
         redis:
-          - image: redis/redis-stack:7.2.0-v12
+          - image: redis/redis-stack-server:7.2.0-v13
             coverage: true
           - image: redis:8.0-M01
             coverage: false
