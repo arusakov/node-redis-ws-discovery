@@ -303,9 +303,4 @@ export class WSDiscovery {
 
     await this.unlock(lockKey, token)
   }
-
-  protected async incrementWithReset(key: string) {
-    const id = await this.redis.incr(key)
-  }
-
 }
