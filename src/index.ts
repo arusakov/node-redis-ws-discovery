@@ -1,86 +1,12 @@
 import { readFile } from 'fs/promises'
 import { resolve } from 'path'
 
-import type { Callback, Redis, Result } from 'ioredis'
+import type { Redis } from 'ioredis'
 
-import { CHNL, CLNT, ID, IP, LUA, SID, SRVR, TTL_DEFAULT } from './constants'
+import { CHNL, CLNT, ID, IP, LUA, SID, SRVR, TTL_DEFAULT, CustomScripts } from './constants'
 import { sleep } from './utils'
-
-export type WSDiscoveryOptions = {
-  redis: Redis
-  prefix?: string
-  ttl?: {
-    server?: number
-    client?: number
-  }
-}
-
-
-export type ClientWithServer = {
-  [CLNT]: number
-  [SRVR]: number 
-}
-
-export type ClientFields =
-  | typeof SID
-  | typeof CHNL
-  | typeof SRVR
-
-
-const assertTTL = (ttl?: number): void | never => {
-  if (ttl != null && ttl <= 0) {
-    throw new Error(`ttl must be > 0 (ttl=${ttl})`)
-  }
-}
-
-const assertChannel = (channel: string): void | never => {
-  if (!channel.length) {
-    throw new Error('Empty channel is not allowed')
-  }
-}
-
-type LockOpts = {
-  key: string
-  token: string
-  ttlMs: number
-  attempts: number
-  sleepMs: number
-}
-
-enum CustomScripts {
-  CHANNEL_ADD = 'channelAdd',
-  CHANNEL_REMOVE = 'channelRemove',
-  INC_WITH_RESET = 'incWithReset',
-  HSET_WITH_TTL  = 'hsetWithTTL',
-}
-
-
-// Add declarations
-declare module "ioredis" {
-  interface RedisCommander<Context> {
-    [CustomScripts.CHANNEL_ADD](
-      key: string,
-      channelProp: string,
-      channel: string,
-    ): Result<0 | 1, Context>;
-
-    [CustomScripts.CHANNEL_REMOVE](
-      key: string,
-      channelProp: string,
-      channel: string,
-    ): Result<0 | 1, Context>;
-
-    [CustomScripts.INC_WITH_RESET](
-      key: string,
-    ): Result<number, Context>;
-
-    [CustomScripts.HSET_WITH_TTL](
-      key: string,
-      ttl: number,
-      ...args: Array<string | number>,      
-    ): Result<number, Context>;
-  }
-}
+import { ClientWithServer, LockOpts, WSDiscoveryOptions, type Client } from './types'
+import { assertChannel, assertClientFields, assertTTL } from './asserts'
 
 
 export class WSDiscovery {
@@ -166,14 +92,23 @@ export class WSDiscovery {
     return clientId
   }
 
-  async getClientServer(clientId: number) {
-    const serverId = await this.redis.hget(this.getClientKey(clientId), SRVR)
-    return Number(serverId)
-  }
 
-  async getClientChannels(clientId: number) {
-    const channels = await this.redis.hget(this.getClientKey(clientId), CHNL)
-    return channels ? channels.split(',').slice(1, -1) : []
+  async getClient<F extends keyof Client>(clientId: number, ...fields: F[]): Promise<Pick<Client, F>> {
+    assertClientFields(fields)
+
+    const values = await this.redis.hmget(this.getClientKey(clientId), ...fields)
+    
+    return fields.reduce((acc, cur, ind) => {
+      const value = values[ind]
+      if (cur === CHNL) {
+        // @ts-expect-error
+        acc[cur] = value.split(',').slice(1, -1)
+      } else {
+        // @ts-expect-error
+        acc[cur] = Number(value)
+      }
+      return acc
+    }, {} as Pick<Client, F>)
   }
 
   async updateClientTTL(clientId: number, ttl?: number) {

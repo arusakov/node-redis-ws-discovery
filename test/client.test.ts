@@ -1,9 +1,10 @@
-import { equal, rejects } from 'assert/strict'
+import { equal, rejects, deepEqual } from 'assert/strict'
 import { describe, it, before, after } from 'node:test'
 
 import { MAX_INT_ID } from './utils'
 
 import { clearRedis, createRedis, sleep, WSDiscoveryForTests } from './utils'
+import { SRVR } from '../src/constants'
 
 describe('Client', () => {
   const redis = createRedis()
@@ -33,8 +34,8 @@ describe('Client', () => {
     const cid = await wsd.registerClient(serverId1, 1)
     equal(typeof cid, 'number')
 
-    const serverId = await wsd.getClientServer(cid)
-    equal(serverId, serverId1)
+    const { srvr } = await wsd.getClient(cid, SRVR)
+    equal(srvr, serverId1)
   })
 
   it('registerClient() twice', async () => {
@@ -91,17 +92,17 @@ describe('Client', () => {
 
   it('client ttl expires', async () => {
     const cid = await wsd.registerClient(serverId1, 1, 1)
-    equal(await wsd.getClientServer(cid), serverId1)
+    deepEqual(await wsd.getClient(cid, SRVR), { [SRVR]: serverId1 })
     
     await sleep(1000)
-    equal(await wsd.getClientServer(cid), 0)
+    deepEqual(await wsd.getClient(cid, SRVR), { [SRVR]: 0 })
   })
 
   it('delete client', async () => {
     const cid = await wsd.registerClient(serverId2, 2, 2)
 
-    equal(await wsd.getClientServer(cid), serverId2)
+    deepEqual(await wsd.getClient(cid, SRVR), { [SRVR]: serverId2 })
     equal(await wsd.deleteClient(cid), true)
-    equal(await wsd.getClientServer(cid), 0)
+    deepEqual(await wsd.getClient(cid, SRVR), { [SRVR]: 0 })
   })
 })

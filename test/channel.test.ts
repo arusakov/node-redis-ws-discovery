@@ -63,8 +63,8 @@ describe('Channels', () => {
     await wsd.addChannel(clientId2, 'lmn')
 
     deepEqual(
-      await wsd.getClientChannels(clientId2),
-      ['abc', 'xyz', 'lmn'],
+      await wsd.getClient(clientId2, CHNL),
+      { [CHNL]: ['abc', 'xyz', 'lmn'] },
     )
   })
 
