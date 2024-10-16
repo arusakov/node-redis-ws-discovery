@@ -19,7 +19,11 @@ jobs:
 
       - run: yarn install --frozen-lockfile
 
-      - run: yarn build
+      - run: |
+          yarn build
+          VERSION='${{ github.ref_name }}'
+          PACKAGE_JSON=$(node -p "const p = require('./package'); p.version = '${VERSION:1}'.substring(1); JSON.stringify(p, null, 2)")
+          echo $PACKAGE_JSON > package.json
 
       - run: npm publish
         env:
