@@ -12,6 +12,10 @@
   },
   "author": "Aleksandr Rusakov <aleksandr.s.rusakov@gmail.com>",
   "license": "MIT",
+  "files": [
+    "lua",
+    "dist"
+  ],
   "devDependencies": {
     "@types/node": "^20.0.0",
     "c8": "10.1.2",
@@ -23,7 +27,7 @@
     "ioredis": "^5.4.1"
   },
   "scripts": {
-    "build": "tsc -p .",
+    "build": "rm -rf dist && tsc -p .",
     "compile": "tsc --noEmit -p ./test",
     "test:all": "yarn test ./test/*.test.ts",
     "test:coverage": "c8 --reporter=lcovonly --reporter=text yarn test:all",
