@@ -1,10 +1,10 @@
 export const TTL_DEFAULT = {
   server: 30,
-  client: 120,
+  socket: 120,
 }
 
 export const SRVR = 'srvr'
-export const CLNT = 'clnt'
+export const SCKT = 'sckt'
 export const IP = 'ip'
 export const SID = 'sid'
 export const ID = 'id'

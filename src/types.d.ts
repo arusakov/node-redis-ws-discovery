@@ -1,21 +1,21 @@
 import type { Redis, Result } from 'ioredis'
-import type { CHNL, CLNT, SID, SRVR, CustomScripts } from './constants'
+import type { CHNL, SCKT, SID, SRVR, CustomScripts } from './constants'
 
 export type WSDiscoveryOptions = {
   redis: Redis
   prefix?: string
   ttl?: {
     server?: number
-    client?: number
+    socket?: number
   }
 }
 
-export type ClientWithServer = {
-  [CLNT]: number
+export type SocketWithServer = {
+  [SCKT]: number
   [SRVR]: number 
 }
 
-export type Client = {
+export type Socket = {
   [CHNL]: string[]
   [SID]: number
   [SRVR]: number

@@ -1,7 +1,7 @@
 import { deepEqual, rejects } from 'assert/strict'
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 
-import { CHNL, CLNT, SRVR } from '../src/constants'
+import { CHNL, SCKT, SRVR } from '../src/constants'
 
 import { clearRedis, createRedis, WSDiscoveryForTests } from './utils'
 import { equal } from 'assert'
@@ -17,9 +17,9 @@ describe('Channels', () => {
   let serverId1: number
   let serverId2: number
 
-  let clientId1: number
-  let clientId2: number
-  let clientId3: number
+  let socketId1: number
+  let socketId2: number
+  let socketId3: number
 
   before(async () => {
     await wsd.connect()
@@ -29,15 +29,15 @@ describe('Channels', () => {
   })
 
   beforeEach(async () => {
-    clientId1 = await wsd.registerClient(serverId1, 1)
-    clientId2 = await wsd.registerClient(serverId1, 2)
-    clientId3 = await wsd.registerClient(serverId2, 1)
+    socketId1 = await wsd.registerSocket(serverId1, 1)
+    socketId2 = await wsd.registerSocket(serverId1, 2)
+    socketId3 = await wsd.registerSocket(serverId2, 1)
   })
 
   afterEach(async () => {
-    await wsd.deleteClient(clientId1)
-    await wsd.deleteClient(clientId2)
-    await wsd.deleteClient(clientId3)
+    await wsd.deleteSocket(socketId1)
+    await wsd.deleteSocket(socketId2)
+    await wsd.deleteSocket(socketId3)
   })
 
   after(async () => {
@@ -47,147 +47,147 @@ describe('Channels', () => {
 
   it('addChannel() OK', async () => {
     equal(
-      await wsd.addChannel(clientId1, 'abc'),
+      await wsd.addChannel(socketId1, 'abc'),
       true,
     )
 
     equal(
-      await wsd.addChannel(clientId1, 'abc'),
+      await wsd.addChannel(socketId1, 'abc'),
       false,
     )
   })
 
   it('addChannel() 3 channels', async () => {
-    await wsd.addChannel(clientId2, 'abc')
-    await wsd.addChannel(clientId2, 'xyz')
-    await wsd.addChannel(clientId2, 'lmn')
+    await wsd.addChannel(socketId2, 'abc')
+    await wsd.addChannel(socketId2, 'xyz')
+    await wsd.addChannel(socketId2, 'lmn')
 
     deepEqual(
-      await wsd.getClient(clientId2, CHNL),
+      await wsd.getSocket(socketId2, CHNL),
       { [CHNL]: ['abc', 'xyz', 'lmn'] },
     )
   })
 
   it('addChannel() validation', async () => {
-    await rejects(() => wsd.addChannel(clientId1, ''), (err) => {
+    await rejects(() => wsd.addChannel(socketId1, ''), (err) => {
       return err instanceof Error && err.message === 'Empty channel is not allowed'
     })
   })
 
   it('removeChanel()', async () => {
     equal(
-      await wsd.addChannel(clientId3, 'abc'),
+      await wsd.addChannel(socketId3, 'abc'),
       true,
     )
 
     equal(
-      await wsd.removeChannel(clientId3, 'abc'),
+      await wsd.removeChannel(socketId3, 'abc'),
       true,
     )
 
     equal(
-      await wsd.removeChannel(clientId3, 'abc'),
+      await wsd.removeChannel(socketId3, 'abc'),
       false,
     )
   })
 
   it('removeChannel() validation', async () => {
-    await rejects(() => wsd.removeChannel(clientId1, ''), (err) => {
+    await rejects(() => wsd.removeChannel(socketId1, ''), (err) => {
       return err instanceof Error && err.message === 'Empty channel is not allowed'
     })
   })
 
-  it('getClientsByChannel() validation', async () => {
-    await rejects(() => wsd.getClientsByChannel(''), (err) => {
+  it('getSocketsByChannel() validation', async () => {
+    await rejects(() => wsd.getSocketsByChannel(''), (err) => {
       return err instanceof Error && err.message === 'Empty channel is not allowed'
     })
   })
 
-  it('getClientsByChannel() no clients', async () => {
+  it('getSocketsByChannel() no sockets', async () => {
     deepEqual(
-      await wsd.getClientsByChannel('xyz'),
+      await wsd.getSocketsByChannel('xyz'),
       [],
     )
   })
 
-  it('getClientsByChannel() return empty array', async () => {
-    await wsd.addChannel(clientId1, 'abc')
+  it('getSocketsByChannel() return empty array', async () => {
+    await wsd.addChannel(socketId1, 'abc')
 
     deepEqual(
-      await wsd.getClientsByChannel('xyz'),
+      await wsd.getSocketsByChannel('xyz'),
       [],
     )
   })
 
-  it('getClientsByChannel() one', async () => {
-    await wsd.addChannel(clientId1, 'abc')
-    await wsd.addChannel(clientId2, 'xyz')
+  it('getSocketsByChannel() one', async () => {
+    await wsd.addChannel(socketId1, 'abc')
+    await wsd.addChannel(socketId2, 'xyz')
 
     deepEqual(
-      await wsd.getClientsByChannel('xyz'),
+      await wsd.getSocketsByChannel('xyz'),
       [{
-        [CLNT]: clientId2,
+        [SCKT]: socketId2,
         [SRVR]: serverId1,
       }],
     )
   })
 
-  it('getClientsByChannel() return two', async () => {
-    await wsd.addChannel(clientId1, 'xyz')
-    await wsd.addChannel(clientId2, 'abc')
-    await wsd.addChannel(clientId3, 'xyz')
+  it('getSocketsByChannel() return two', async () => {
+    await wsd.addChannel(socketId1, 'xyz')
+    await wsd.addChannel(socketId2, 'abc')
+    await wsd.addChannel(socketId3, 'xyz')
 
     deepEqual(
-      await wsd.getClientsByChannel('xyz'),
+      await wsd.getSocketsByChannel('xyz'),
       [
         {
-          [CLNT]: clientId1,
+          [SCKT]: socketId1,
           [SRVR]: serverId1,
         },
         {
-          [CLNT]: clientId3,
+          [SCKT]: socketId3,
           [SRVR]: serverId2,
         },
       ],
     )
   })
 
-  it('getClientsByChannel() with batch=1', async () => {
-    await wsd.addChannel(clientId1, 'xyz')
-    await wsd.addChannel(clientId3, 'xyz')
+  it('getSocketsByChannel() with batch=1', async () => {
+    await wsd.addChannel(socketId1, 'xyz')
+    await wsd.addChannel(socketId3, 'xyz')
 
     deepEqual(
-      await wsd.getClientsByChannel('xyz', 1),
+      await wsd.getSocketsByChannel('xyz', 1),
       [
         {
-          [CLNT]: clientId1,
+          [SCKT]: socketId1,
           [SRVR]: serverId1,
         },
         {
-          [CLNT]: clientId3,
+          [SCKT]: socketId3,
           [SRVR]: serverId2,
         },
       ],
     )
   })
 
-  it('getClientsByChannel() multiple channels', async () => {
-    await wsd.addChannel(clientId1, 'xyz')
-    await wsd.addChannel(clientId1, 'abc')
-    await wsd.addChannel(clientId1, '123')
+  it('getSocketsByChannel() multiple channels', async () => {
+    await wsd.addChannel(socketId1, 'xyz')
+    await wsd.addChannel(socketId1, 'abc')
+    await wsd.addChannel(socketId1, '123')
 
-    await wsd.addChannel(clientId3, 'qwerty')
-    await wsd.addChannel(clientId3, 'xyz')
+    await wsd.addChannel(socketId3, 'qwerty')
+    await wsd.addChannel(socketId3, 'xyz')
 
     deepEqual(
-      await wsd.getClientsByChannel('xyz'),
+      await wsd.getSocketsByChannel('xyz'),
       [
         {
-          [CLNT]: clientId1,
+          [SCKT]: socketId1,
           [SRVR]: serverId1,
         },
         {
-          [CLNT]: clientId3,
+          [SCKT]: socketId3,
           [SRVR]: serverId2,
         },
       ],

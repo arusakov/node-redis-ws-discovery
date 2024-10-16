@@ -1,4 +1,4 @@
-import type { Client } from "./types"
+import type { Socket } from "./types"
 
 export const assertTTL = (ttl?: number): void | never => {
   if (ttl != null && ttl <= 0) {
@@ -12,7 +12,7 @@ export const assertChannel = (channel: string): void | never => {
   }
 }
 
-export const assertClientFields = (fields: Array<keyof Client>) => {
+export const assertSocketFields = (fields: Array<keyof Socket>) => {
   if (!fields.length) {
     throw new Error('no empty fields')
   }

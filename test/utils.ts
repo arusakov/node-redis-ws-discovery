@@ -35,16 +35,16 @@ export class WSDiscoveryForTests extends WSDiscovery {
     return this.redis.set(`${this.prefixServer}${ID}`, id)
   }
 
-  setClientId(id: number) {
-    return this.redis.set(`${this.prefixClient}${ID}`, id)
+  setSocketId(id: number) {
+    return this.redis.set(`${this.prefixSocket}${ID}`, id)
   }
 
   getServerTTL(id: number) {
     return this.redis.ttl(this.getServerKey(id))
   }
 
-  getClientTTL(id: number) {
-    return this.redis.ttl(this.getClientKey(id))
+  getSocketTTL(id: number) {
+    return this.redis.ttl(this.getSocketKey(id))
   }
 
   lockForTests(ttlMs: number) {

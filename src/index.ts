@@ -3,20 +3,20 @@ import { resolve } from 'path'
 
 import type { Redis } from 'ioredis'
 
-import { CHNL, CLNT, ID, IP, LUA, SID, SRVR, TTL_DEFAULT, CustomScripts } from './constants'
+import { CHNL, SCKT, ID, IP, LUA, SID, SRVR, TTL_DEFAULT, CustomScripts } from './constants'
 import { sleep } from './utils'
-import { ClientWithServer, LockOpts, WSDiscoveryOptions, type Client } from './types'
-import { assertChannel, assertClientFields, assertTTL } from './asserts'
+import { SocketWithServer, LockOpts, WSDiscoveryOptions, type Socket } from './types'
+import { assertChannel, assertSocketFields, assertTTL } from './asserts'
 
 
 export class WSDiscovery {
   readonly prefix: string
   readonly prefixServer: string
-  readonly prefixClient: string
+  readonly prefixSocket: string
   readonly ttlServer: number
-  readonly ttlClient: number
+  readonly ttlSocket: number
   
-  readonly indexClntChnl: string
+  readonly indexScktChnl: string
   
   protected readonly redis: Redis
 
@@ -27,16 +27,16 @@ export class WSDiscovery {
   }: WSDiscoveryOptions) {
     assertTTL(ttl.server)
     this.ttlServer = ttl.server || TTL_DEFAULT.server
-    assertTTL(ttl.client)
-    this.ttlClient = ttl.client || TTL_DEFAULT.client
+    assertTTL(ttl.socket)
+    this.ttlSocket = ttl.socket || TTL_DEFAULT.socket
 
     this.redis = redis
 
     this.prefix = `${prefix}:`
     this.prefixServer = `${this.prefix}${SRVR}:`
-    this.prefixClient = `${this.prefix}${CLNT}:`
+    this.prefixSocket = `${this.prefix}${SCKT}:`
 
-    this.indexClntChnl = `${this.prefix}__idx_${CLNT}_${CHNL}`
+    this.indexScktChnl = `${this.prefix}__idx_${SCKT}_${CHNL}`
   }
 
   async connect() {
@@ -74,29 +74,29 @@ export class WSDiscovery {
   // There is not delete server, becase ttl is used
   //
 
-  async registerClient(serverId: number, sessionId: number, ttl?: number) {
+  async registerSocket(serverId: number, sessionId: number, ttl?: number) {
     assertTTL(ttl)
 
-    const clientIdKey = `${this.prefixClient}${ID}`
-    const clientId = await this.redis.incWithReset(clientIdKey)
+    const socketIdKey = `${this.prefixSocket}${ID}`
+    const socketId = await this.redis.incWithReset(socketIdKey)
 
-    const clientKey = this.getClientKey(clientId)
+    const socketKey = this.getSocketKey(socketId)
     await this.redis.hsetWithTTL(
-      clientKey,
-      ttl || this.ttlClient,
+      socketKey,
+      ttl || this.ttlSocket,
       SRVR, serverId,
       SID, sessionId,
       CHNL, ',',
     )
 
-    return clientId
+    return socketId
   }
 
 
-  async getClient<F extends keyof Client>(clientId: number, ...fields: F[]): Promise<Pick<Client, F>> {
-    assertClientFields(fields)
+  async getSocket<F extends keyof Socket>(socketId: number, ...fields: F[]): Promise<Pick<Socket, F>> {
+    assertSocketFields(fields)
 
-    const values = await this.redis.hmget(this.getClientKey(clientId), ...fields)
+    const values = await this.redis.hmget(this.getSocketKey(socketId), ...fields)
     
     return fields.reduce((acc, cur, ind) => {
       const value = values[ind]
@@ -108,17 +108,17 @@ export class WSDiscovery {
         acc[cur] = Number(value)
       }
       return acc
-    }, {} as Pick<Client, F>)
+    }, {} as Pick<Socket, F>)
   }
 
-  async updateClientTTL(clientId: number, ttl?: number) {
+  async updateSocketTTL(socketId: number, ttl?: number) {
     assertTTL(ttl)
-    const updated = await this.redis.expire(this.getClientKey(clientId), ttl || this.ttlClient)
+    const updated = await this.redis.expire(this.getSocketKey(socketId), ttl || this.ttlSocket)
     return updated === 1
   }
 
-  async deleteClient(clientId: number) {
-    const deleted = await this.redis.del(this.getClientKey(clientId))
+  async deleteSocket(socketId: number) {
+    const deleted = await this.redis.del(this.getSocketKey(socketId))
     return deleted === 1
   }
 
@@ -126,21 +126,21 @@ export class WSDiscovery {
     return this.prefixServer + serverId
   }
 
-  async addChannel(clientId: number, channel: string) {
+  async addChannel(socketId: number, channel: string) {
     assertChannel(channel)
 
-    const result = await this.redis.channelAdd(this.getClientKey(clientId), CHNL, channel)
+    const result = await this.redis.channelAdd(this.getSocketKey(socketId), CHNL, channel)
     return result === 1
   }
 
-  async removeChannel(clientId: number, channel: string) {
+  async removeChannel(socketId: number, channel: string) {
     assertChannel(channel)
  
-    const result = await this.redis.channelRemove(this.getClientKey(clientId), CHNL, channel)
+    const result = await this.redis.channelRemove(this.getSocketKey(socketId), CHNL, channel)
     return result === 1
   }
 
-  async getClientsByChannel(channel: string, batch = 100): Promise<ClientWithServer[]> {
+  async getSocketsByChannel(channel: string, batch = 100): Promise<SocketWithServer[]> {
     assertChannel(channel)
 
     type KeyAndKey = ['__key', string]
@@ -148,7 +148,7 @@ export class WSDiscovery {
 
     let [aggregateResult, cursor] = await this.redis.call(
       'FT.AGGREGATE',
-      this.indexClntChnl,
+      this.indexScktChnl,
       `@${CHNL}:{${channel}}`,
       'LOAD', 1, '@__key',
       'WITHCURSOR',
@@ -164,7 +164,7 @@ export class WSDiscovery {
       }
 
       [aggregateResult, cursor] = await this.redis.call(
-        'FT.CURSOR', 'READ', this.indexClntChnl, cursor
+        'FT.CURSOR', 'READ', this.indexScktChnl, cursor
       ) as AggregateAndCursorResponse
     }
 
@@ -176,7 +176,7 @@ export class WSDiscovery {
       throw new Error('multiple hget error')
     }
 
-    const results: ClientWithServer[] = []
+    const results: SocketWithServer[] = []
 
     for (const [index, key] of keys.entries()) {
       const [err, serverId] = hgetResults[index]
@@ -186,7 +186,7 @@ export class WSDiscovery {
       }
 
       results.push({
-        [CLNT]: Number(key.substring(this.prefixClient.length)),
+        [SCKT]: Number(key.substring(this.prefixSocket.length)),
         [SRVR]: Number(serverId),
       })
     }    
@@ -194,8 +194,8 @@ export class WSDiscovery {
     return results
   }
 
-  protected getClientKey(clientId: number) {
-    return this.prefixClient + clientId
+  protected getSocketKey(socketId: number) {
+    return this.prefixSocket + socketId
   }
 
   protected getMigrationsKey() {
@@ -270,7 +270,7 @@ export class WSDiscovery {
 
   protected async migrate() {
     const migrations: Array<[string, string[]]> = [
-      ['FT.CREATE', `${this.indexClntChnl} PREFIX 1 ${this.prefixClient} SCHEMA ${CHNL} TAG`.split(' ')],
+      ['FT.CREATE', `${this.indexScktChnl} PREFIX 1 ${this.prefixSocket} SCHEMA ${CHNL} TAG`.split(' ')],
     ]
 
     const token = `${Date.now()}_${Math.floor(Math.random() * 99999999)}`
