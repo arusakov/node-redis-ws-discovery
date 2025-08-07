@@ -136,12 +136,9 @@ export class WSDiscovery {
   async addChannels(socketId: number, ...channels: string[]): Promise<boolean> {
     if (channels.length === 0) return true
     
-    channels.forEach(assertChannel)
-
     let success = true
     for (const channel of channels) {
-      const result = await this.redis.channelAdd(this.getSocketKey(socketId), CHNL, channel)
-      if (result !== 1) {
+      if (!(await this.addChannel(socketId, channel))) {
         success = false
       }
     }
@@ -158,12 +155,9 @@ export class WSDiscovery {
   async removeChannels(socketId: number, ...channels: string[]): Promise<boolean> {
     if (channels.length === 0) return true
     
-    channels.forEach(assertChannel)
-
     let success = true
     for (const channel of channels) {
-      const result = await this.redis.channelRemove(this.getSocketKey(socketId), CHNL, channel)
-      if (result !== 1) {
+      if (!(await this.removeChannel(socketId, channel))) {
         success = false
       }
     }
