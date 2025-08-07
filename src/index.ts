@@ -133,11 +133,41 @@ export class WSDiscovery {
     return result === 1
   }
 
+  async addChannels(socketId: number, ...channels: string[]): Promise<boolean> {
+    if (channels.length === 0) return true
+    
+    channels.forEach(assertChannel)
+
+    let success = true
+    for (const channel of channels) {
+      const result = await this.redis.channelAdd(this.getSocketKey(socketId), CHNL, channel)
+      if (result !== 1) {
+        success = false
+      }
+    }
+    return success
+  }
+
   async removeChannel(socketId: number, channel: string) {
     assertChannel(channel)
  
     const result = await this.redis.channelRemove(this.getSocketKey(socketId), CHNL, channel)
     return result === 1
+  }
+
+  async removeChannels(socketId: number, ...channels: string[]): Promise<boolean> {
+    if (channels.length === 0) return true
+    
+    channels.forEach(assertChannel)
+
+    let success = true
+    for (const channel of channels) {
+      const result = await this.redis.channelRemove(this.getSocketKey(socketId), CHNL, channel)
+      if (result !== 1) {
+        success = false
+      }
+    }
+    return success
   }
 
   async getSocketsByChannel(channel: string, batch = 100): Promise<SocketWithServer[]> {
@@ -190,6 +220,133 @@ export class WSDiscovery {
         [SRVR]: Number(serverId),
       })
     }    
+
+    return results
+  }
+
+  async getSocketSidsByChannel(channel: string, batch = 100): Promise<number[]> {
+    assertChannel(channel)
+
+    type KeyAndKey = ['__key', string]
+    type AggregateAndCursorResponse = [[1, ...KeyAndKey[]], number]
+
+    let [aggregateResult, cursor] = await this.redis.call(
+      'FT.AGGREGATE',
+      this.indexScktChnl,
+      `@${CHNL}:{${channel}}`,
+      'LOAD', 1, '@__key',
+      'WITHCURSOR',
+      'COUNT', batch,
+    ) as AggregateAndCursorResponse
+
+    const keys: string[] = []
+  
+    while (true) {
+      keys.push(...((aggregateResult.slice(1) as KeyAndKey[]).map(([_key, key]) => key)))
+      if (!cursor) {
+        break
+      }
+
+      [aggregateResult, cursor] = await this.redis.call(
+        'FT.CURSOR', 'read', this.indexScktChnl, cursor
+      ) as AggregateAndCursorResponse
+    }
+
+    const hgetResults = await this.redis.pipeline(
+      keys.map((k) => ['hget', k, SID]),
+    ).exec()
+
+    if (!hgetResults) {
+      throw new Error('multiple hget error')
+    }
+
+    const results: number[] = []
+
+    for (const [index] of keys.entries()) {
+      const [err, sessionId] = hgetResults[index]
+
+      if (err || !sessionId) {
+        continue
+      }
+
+      results.push(Number(sessionId))
+    }
+
+    return results
+  }
+
+  async getSocketData(socketId: number): Promise<[number, string] | null> {
+    const values = await this.redis.hmget(this.getSocketKey(socketId), SID, CHNL)
+    
+    if (!values || values[0] === null || values[1] === null) {
+      return null
+    }
+
+    const sessionId = Number(values[0])
+    const channelsString = values[1].split(',').slice(1, -1).join(',') // Remove surrounding commas
+    
+    return [sessionId, channelsString]
+  }
+
+  async getSocketFieldsByChannel<F extends keyof Socket>(channel: string, batch = 100, ...fields: F[]): Promise<Array<[number, Pick<Socket, F>]>> {
+    assertChannel(channel)
+    assertSocketFields(fields)
+
+    type KeyAndKey = ['__key', string]
+    type AggregateAndCursorResponse = [[1, ...KeyAndKey[]], number]
+
+    let [aggregateResult, cursor] = await this.redis.call(
+      'FT.AGGREGATE',
+      this.indexScktChnl,
+      `@${CHNL}:{${channel}}`,
+      'LOAD', 1, '@__key',
+      'WITHCURSOR',
+      'COUNT', batch,
+    ) as AggregateAndCursorResponse
+
+    const keys: string[] = []
+  
+    while (true) {
+      keys.push(...((aggregateResult.slice(1) as KeyAndKey[]).map(([_key, key]) => key)))
+      if (!cursor) {
+        break
+      }
+
+      [aggregateResult, cursor] = await this.redis.call(
+        'FT.CURSOR', 'read', this.indexScktChnl, cursor
+      ) as AggregateAndCursorResponse
+    }
+
+    const hmgetResults = await this.redis.pipeline(
+      keys.map((k) => ['hmget', k, ...fields]),
+    ).exec()
+
+    if (!hmgetResults) {
+      throw new Error('multiple hmget error')
+    }
+
+    const results: Array<[number, Pick<Socket, F>]> = []
+
+    for (const [index, key] of keys.entries()) {
+      const [err, values] = hmgetResults[index]
+
+      if (err || !values || (values as any[]).some((v: any) => v === null)) {
+        continue
+      }
+
+      const socketId = Number(key.substring(this.prefixSocket.length))
+      const socketData = fields.reduce((acc, field, fieldIndex) => {
+        const value = (values as any[])[fieldIndex]
+        if (field === CHNL) {
+          (acc as any)[field] = value.split(',').slice(1, -1)
+        } else {
+          (acc as any)[field] = Number(value)
+        }
+        return acc
+      }, {} as Pick<Socket, F>)
+
+      results.push([socketId, socketData])
+    }
 
     return results
   }
