@@ -1,4 +1,4 @@
-import type { Socket } from "./types"
+import type { Socket } from './types.ts'
 
 export const assertTTL = (ttl?: number): void | never => {
   if (ttl != null && ttl <= 0) {
@@ -6,9 +6,13 @@ export const assertTTL = (ttl?: number): void | never => {
   }
 }
 
+// Comma is the separator of channels inside a socket hash
 export const assertChannel = (channel: string): void | never => {
   if (!channel.length) {
     throw new Error('Empty channel is not allowed')
+  }
+  if (channel.includes(',')) {
+    throw new Error(`Comma is not allowed in channel (channel=${channel})`)
   }
 }
 

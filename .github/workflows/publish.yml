@@ -10,20 +10,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20.x'
+          node-version: '26.x'
           registry-url: 'https://registry.npmjs.org'
 
-      - run: yarn install --frozen-lockfile
+      - run: npm ci
 
-      - run: |
-          yarn build
-          VERSION='${{ github.ref_name }}'
-          PACKAGE_JSON=$(node -p "const p = require('./package'); p.version = '${VERSION:1}'; JSON.stringify(p, null, 2)")
-          echo $PACKAGE_JSON > package.json
+      - run: npm run build
+
+      - run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
 
       - run: npm publish
         env:

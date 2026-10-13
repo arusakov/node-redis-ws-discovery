@@ -3,8 +3,7 @@
 
 services:
   redis:
-    image: redis:8.0.2-alpine
+    image: redis:8.10.2-alpine
+    command: redis-server --save ""
     ports:
       - "127.0.0.1:6379:6379"
-    environment:
-      REDIS_ARGS: --save ""

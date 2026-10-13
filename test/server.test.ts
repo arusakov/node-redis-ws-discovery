@@ -1,9 +1,8 @@
-import { equal, rejects } from 'assert/strict'
+import { equal, rejects } from 'node:assert/strict'
 import { describe, it, before, after } from 'node:test'
 
-import { MAX_INT_ID } from './utils'
-
-import { clearRedis, createRedis, sleep, WSDiscoveryForTests } from './utils'
+import { ID_MAX } from '../src/constants.ts'
+import { clearRedis, createRedis, sleep, WSDiscoveryForTests } from './utils.ts'
 
 describe('Server', () => {
   const redis = createRedis()
@@ -50,11 +49,11 @@ describe('Server', () => {
   })
 
   it('registerServer() id restarting', async () => {
-    await wsd.setServerId(MAX_INT_ID)
-    await wsd.registerServer('abc')
+    await wsd.setServerId(ID_MAX - 1)
 
-    const newId = await wsd.registerServer('bcd')
-    equal(newId, 1)  
+    equal(await wsd.registerServer('abc'), ID_MAX)
+    equal(await wsd.registerServer('bcd'), 1)
+    equal(await wsd.registerServer('cde'), 2)
   })
 
   it('updateServerTTL()', async () => {

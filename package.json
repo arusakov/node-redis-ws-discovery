@@ -3,6 +3,13 @@
   "version": "",
   "description": "Redis service discovery for WebSocket servers and sockets",
   "main": "dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/arusakov/redis-ws-discovery.git"
@@ -12,16 +19,15 @@
   },
   "author": "Aleksandr Rusakov <aleksandr.s.rusakov@gmail.com>",
   "license": "MIT",
+  "type": "module",
   "files": [
-    "lua",
     "dist"
   ],
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "c8": "10.1.2",
-    "ioredis": "5.4.1",
-    "ts-node": "10.9.2",
-    "typescript": "5.6.3"
+    "@types/node": "26.6.5",
+    "c8": "12.0.0",
+    "ioredis": "5.11.1",
+    "typescript": "7.0.2"
   },
   "peerDependencies": {
     "ioredis": "^5.4.1"
@@ -29,11 +35,10 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p .",
     "compile": "tsc --noEmit -p ./test",
-    "test:all": "yarn test ./test/*.test.ts",
-    "test:coverage": "c8 --reporter=lcovonly --reporter=text yarn test:all",
-    "test": "node --test --test-concurrency=1 --require=ts-node/register"
+    "test": "node --test --test-concurrency=1 \"test/*.test.ts\"",
+    "test:coverage": "c8 npm test"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=26.0.0"
   }
 }

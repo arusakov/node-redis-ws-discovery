@@ -1,10 +1,8 @@
-import { equal, rejects, deepEqual } from 'assert/strict'
+import { equal, rejects, deepEqual } from 'node:assert/strict'
 import { describe, it, before, after } from 'node:test'
 
-import { MAX_INT_ID } from './utils'
-
-import { clearRedis, createRedis, sleep, WSDiscoveryForTests } from './utils'
-import { SRVR } from '../src/constants'
+import { clearRedis, createRedis, sleep, WSDiscoveryForTests } from './utils.ts'
+import { ID_MAX, SRVR } from '../src/constants.ts'
 
 describe('Socket', () => {
   const redis = createRedis()
@@ -34,8 +32,7 @@ describe('Socket', () => {
     const cid = await wsd.registerSocket(serverId1, 1)
     equal(typeof cid, 'number')
 
-    const { srvr } = await wsd.getSocket(cid, SRVR)
-    equal(srvr, serverId1)
+    deepEqual(await wsd.getSocket(cid, SRVR), { [SRVR]: serverId1 })
   })
 
   it('registerSocket() twice', async () => {
@@ -53,11 +50,11 @@ describe('Socket', () => {
   })
 
   it('registerSocket() id restarting', async () => {
-    await wsd.setSocketId(MAX_INT_ID)
-    await wsd.registerSocket(serverId1, 1)
+    await wsd.setSocketId(ID_MAX - 1)
 
-    const newId = await wsd.registerSocket(serverId2, 2)
-    equal(newId, 1)  
+    equal(await wsd.registerSocket(serverId1, 1), ID_MAX)
+    equal(await wsd.registerSocket(serverId2, 2), 1)
+    equal(await wsd.registerSocket(serverId2, 2), 2)
   })
 
   it('updateSocketTTL()', async () => {
@@ -95,7 +92,7 @@ describe('Socket', () => {
     deepEqual(await wsd.getSocket(cid, SRVR), { [SRVR]: serverId1 })
     
     await sleep(1000)
-    deepEqual(await wsd.getSocket(cid, SRVR), { [SRVR]: 0 })
+    equal(await wsd.getSocket(cid, SRVR), null)
   })
 
   it('delete socket', async () => {
@@ -103,6 +100,6 @@ describe('Socket', () => {
 
     deepEqual(await wsd.getSocket(cid, SRVR), { [SRVR]: serverId2 })
     equal(await wsd.deleteSocket(cid), true)
-    deepEqual(await wsd.getSocket(cid, SRVR), { [SRVR]: 0 })
+    equal(await wsd.getSocket(cid, SRVR), null)
   })
 })

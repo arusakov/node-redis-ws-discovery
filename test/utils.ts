@@ -1,9 +1,7 @@
-import { Redis } from "ioredis"
+import { Redis } from 'ioredis'
 
-import { WSDiscovery } from "../src"
-import { ID } from "../src/constants"
-
-export const MAX_INT_ID = 2 ** 30
+import { WSDiscovery } from '../src/index.ts'
+import { ID } from '../src/constants.ts'
 
 export const createRedis = () => {
   return new Redis({
@@ -31,6 +29,37 @@ export const clearRedis = async (redis: Redis, prefix: string) => {
 }
 
 export class WSDiscoveryForTests extends WSDiscovery {
+  // redis keys that are added to the result of the search by channel (stale or broken keys)
+  extraKeys: string[] = []
+
+  // number of getIndexInfo() calls that report the running indexing
+  indexingPolls = 0
+
+  protected override async getIndexInfo(index: string) {
+    const info = await super.getIndexInfo(index)
+    if (info && this.indexingPolls > 0) {
+      --this.indexingPolls
+      return { ...info, indexing: '1' }
+    }
+    return info
+  }
+
+  protected override async getKeysByChannel(channel: string, batch: number) {
+    return [...await super.getKeysByChannel(channel, batch), ...this.extraKeys]
+  }
+
+  getLegacyIndexName() {
+    return this.indexScktChnlLegacy
+  }
+
+  getSocketKeyForTests(socketId: number) {
+    return this.getSocketKey(socketId)
+  }
+
+  getRedis() {
+    return this.redis
+  }
+
   setServerId(id: number) {
     return this.redis.set(`${this.prefixServer}${ID}`, id)
   }

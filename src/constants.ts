@@ -9,12 +9,6 @@ export const IP = 'ip'
 export const SID = 'sid'
 export const ID = 'id'
 export const CHNL = 'chnl'
-export const LUA = 'lua'
 
-export enum CustomScripts {
-  CHANNEL_ADD = 'channelAdd',
-  CHANNEL_REMOVE = 'channelRemove',
-  INC_WITH_RESET = 'incWithReset',
-  HSET_WITH_TTL  = 'hsetWithTTL',
-}
-
+// Server and socket ids are in [1, ID_MAX]: at most 9 decimal digits
+export const ID_MAX = 999_999_999

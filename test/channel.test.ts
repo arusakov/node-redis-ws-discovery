@@ -1,10 +1,9 @@
-import { deepEqual, rejects } from 'assert/strict'
+import { deepEqual, equal, rejects } from 'node:assert/strict'
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 
-import { CHNL, SCKT, SRVR } from '../src/constants'
+import { CHNL, SCKT, SRVR } from '../src/constants.ts'
 
-import { clearRedis, createRedis, WSDiscoveryForTests } from './utils'
-import { equal } from 'assert'
+import { clearRedis, createRedis, WSDiscoveryForTests } from './utils.ts'
 
 describe('Channels', () => {
   const redis = createRedis()

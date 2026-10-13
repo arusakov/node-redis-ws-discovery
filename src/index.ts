@@ -1,13 +1,14 @@
-import { readFile } from 'fs/promises'
-import { resolve } from 'path'
-
 import type { Redis } from 'ioredis'
 
-import { CHNL, SCKT, ID, IP, LUA, SID, SRVR, TTL_DEFAULT, CustomScripts } from './constants'
-import { sleep } from './utils'
-import { SocketWithServer, LockOpts, WSDiscoveryOptions, type Socket } from './types'
-import { assertChannel, assertSocketFields, assertTTL } from './asserts'
+import { CHNL, SCKT, ID, IP, SID, SRVR, TTL_DEFAULT } from './constants.ts'
+import { SCRIPTS, unlock } from './lua.ts'
+import { escapeTag, parseSocketFields, sleep } from './utils.ts'
+import type { LockOpts, ScriptCommands, Socket, SocketWithServer, WSDiscoveryOptions } from './types.ts'
+import { assertChannel, assertSocketFields, assertTTL } from './asserts.ts'
 
+export type { Socket, SocketWithServer, WSDiscoveryOptions } from './types.ts'
+
+type AggregateResponse = [[number, ...Array<[string, string]>], number]
 
 export class WSDiscovery {
   readonly prefix: string
@@ -15,10 +16,12 @@ export class WSDiscovery {
   readonly prefixSocket: string
   readonly ttlServer: number
   readonly ttlSocket: number
-  
+
   readonly indexScktChnl: string
-  
-  protected readonly redis: Redis
+  // case insensitive index of the first version, it is dropped by the migration
+  protected readonly indexScktChnlLegacy: string
+
+  protected readonly redis: Redis & ScriptCommands
 
   constructor({
     redis,
@@ -26,34 +29,34 @@ export class WSDiscovery {
     prefix = 'wsd',
   }: WSDiscoveryOptions) {
     assertTTL(ttl.server)
-    this.ttlServer = ttl.server || TTL_DEFAULT.server
+    this.ttlServer = ttl.server ?? TTL_DEFAULT.server
     assertTTL(ttl.socket)
-    this.ttlSocket = ttl.socket || TTL_DEFAULT.socket
+    this.ttlSocket = ttl.socket ?? TTL_DEFAULT.socket
 
-    this.redis = redis
+    this.redis = redis as Redis & ScriptCommands
 
     this.prefix = `${prefix}:`
     this.prefixServer = `${this.prefix}${SRVR}:`
     this.prefixSocket = `${this.prefix}${SCKT}:`
 
-    this.indexScktChnl = `${this.prefix}__idx_${SCKT}_${CHNL}`
+    this.indexScktChnlLegacy = `${this.prefix}__idx_${SCKT}_${CHNL}`
+    this.indexScktChnl = `${this.indexScktChnlLegacy}_v2`
   }
 
   async connect() {
-    await this.defineCommands()
+    this.defineCommands()
     await this.migrate()
   }
 
   async registerServer(serverIp: string, ttl?: number) {
     assertTTL(ttl)
-    
+
     const serverIdKey = `${this.prefixServer}${ID}`
     const serverId = await this.redis.incWithReset(serverIdKey)
 
-    const serverKey = this.getServerKey(serverId)
     await this.redis.hsetWithTTL(
-      serverKey,
-      ttl || this.ttlServer,
+      this.getServerKey(serverId),
+      ttl ?? this.ttlServer,
       IP, serverIp,
     )
 
@@ -62,7 +65,7 @@ export class WSDiscovery {
 
   async updateServerTTL(serverId: number, ttl?: number) {
     assertTTL(ttl)
-    const updated = await this.redis.expire(this.getServerKey(serverId), ttl || this.ttlServer)
+    const updated = await this.redis.expire(this.getServerKey(serverId), ttl ?? this.ttlServer)
     return updated === 1
   }
 
@@ -80,10 +83,9 @@ export class WSDiscovery {
     const socketIdKey = `${this.prefixSocket}${ID}`
     const socketId = await this.redis.incWithReset(socketIdKey)
 
-    const socketKey = this.getSocketKey(socketId)
     await this.redis.hsetWithTTL(
-      socketKey,
-      ttl || this.ttlSocket,
+      this.getSocketKey(socketId),
+      ttl ?? this.ttlSocket,
       SRVR, serverId,
       SID, sessionId,
       CHNL, ',',
@@ -92,28 +94,23 @@ export class WSDiscovery {
     return socketId
   }
 
-
-  async getSocket<F extends keyof Socket>(socketId: number, ...fields: F[]): Promise<Pick<Socket, F>> {
+  /**
+   * @returns requested fields or `null` if the socket does not exist (or expired)
+   */
+  async getSocket<F extends keyof Socket>(socketId: number, ...fields: F[]): Promise<Pick<Socket, F> | null> {
     assertSocketFields(fields)
 
     const values = await this.redis.hmget(this.getSocketKey(socketId), ...fields)
-    
-    return fields.reduce((acc, cur, ind) => {
-      const value = values[ind]
-      if (cur === CHNL) {
-        // @ts-expect-error
-        acc[cur] = value.split(',').slice(1, -1)
-      } else {
-        // @ts-expect-error
-        acc[cur] = Number(value)
-      }
-      return acc
-    }, {} as Pick<Socket, F>)
+    if (values.includes(null)) {
+      return null
+    }
+
+    return parseSocketFields(fields, values as string[])
   }
 
   async updateSocketTTL(socketId: number, ttl?: number) {
     assertTTL(ttl)
-    const updated = await this.redis.expire(this.getSocketKey(socketId), ttl || this.ttlSocket)
+    const updated = await this.redis.expire(this.getSocketKey(socketId), ttl ?? this.ttlSocket)
     return updated === 1
   }
 
@@ -122,231 +119,140 @@ export class WSDiscovery {
     return deleted === 1
   }
 
+  /**
+   * @returns `true` if the channel was added, `false` if it was already there or the socket does not exist
+   */
+  async addChannel(socketId: number, channel: string) {
+    assertChannel(channel)
+
+    const added = await this.redis.channelAdd(this.getSocketKey(socketId), CHNL, channel)
+    return added === 1
+  }
+
+  /**
+   * Atomically adds channels.
+   * @returns `true` if every channel was added
+   */
+  async addChannels(socketId: number, ...channels: string[]) {
+    channels.forEach(assertChannel)
+    if (!channels.length) {
+      return true
+    }
+
+    const added = await this.redis.channelAdd(this.getSocketKey(socketId), CHNL, ...channels)
+    return added === channels.length
+  }
+
+  /**
+   * @returns `true` if the channel was removed, `false` if it was not there or the socket does not exist
+   */
+  async removeChannel(socketId: number, channel: string) {
+    assertChannel(channel)
+
+    const removed = await this.redis.channelRemove(this.getSocketKey(socketId), CHNL, channel)
+    return removed === 1
+  }
+
+  /**
+   * Atomically removes channels.
+   * @returns `true` if every channel was removed
+   */
+  async removeChannels(socketId: number, ...channels: string[]) {
+    channels.forEach(assertChannel)
+    if (!channels.length) {
+      return true
+    }
+
+    const removed = await this.redis.channelRemove(this.getSocketKey(socketId), CHNL, ...channels)
+    return removed === channels.length
+  }
+
+  async getSocketsByChannel(channel: string, batch = 100): Promise<SocketWithServer[]> {
+    const keys = await this.getKeysByChannel(channel, batch)
+    const results = await this.pipeline(keys.map((key) => ['hget', key, SRVR]))
+
+    const sockets: SocketWithServer[] = []
+
+    keys.forEach((key, index) => {
+      const [err, serverId] = results[index]
+      if (err || serverId === null) {
+        return
+      }
+
+      sockets.push({
+        [SCKT]: this.getSocketIdFromKey(key),
+        [SRVR]: Number(serverId),
+      })
+    })
+
+    return sockets
+  }
+
+  async getSocketSidsByChannel(channel: string, batch = 100): Promise<number[]> {
+    const keys = await this.getKeysByChannel(channel, batch)
+    const results = await this.pipeline(keys.map((key) => ['hget', key, SID]))
+
+    const sessionIds: number[] = []
+
+    for (const [err, sessionId] of results) {
+      if (err || sessionId === null) {
+        continue
+      }
+
+      sessionIds.push(Number(sessionId))
+    }
+
+    return sessionIds
+  }
+
+  async getSocketData(socketId: number): Promise<[number, string] | null> {
+    const [sessionId, channels] = await this.redis.hmget(this.getSocketKey(socketId), SID, CHNL)
+
+    if (sessionId === null || channels === null) {
+      return null
+    }
+
+    // Remove surrounding commas
+    return [Number(sessionId), channels.slice(1, -1)]
+  }
+
+  async getSocketFieldsByChannel<F extends keyof Socket>(
+    channel: string,
+    batch = 100,
+    ...fields: F[]
+  ): Promise<Array<[number, Pick<Socket, F>]>> {
+    assertSocketFields(fields)
+
+    const keys = await this.getKeysByChannel(channel, batch)
+    const results = await this.pipeline(keys.map((key) => ['hmget', key, ...fields]))
+
+    const sockets: Array<[number, Pick<Socket, F>]> = []
+
+    keys.forEach((key, index) => {
+      const [err, values] = results[index] as [Error | null, Array<string | null>]
+      if (err || values.includes(null)) {
+        return
+      }
+
+      sockets.push([
+        this.getSocketIdFromKey(key),
+        parseSocketFields(fields, values as string[]),
+      ])
+    })
+
+    return sockets
+  }
+
   protected getServerKey(serverId: number) {
     return this.prefixServer + serverId
   }
 
-  async addChannel(socketId: number, channel: string) {
-    assertChannel(channel)
-
-    const result = await this.redis.channelAdd(this.getSocketKey(socketId), CHNL, channel)
-    return result === 1
-  }
-
-  async addChannels(socketId: number, ...channels: string[]): Promise<boolean> {
-    if (channels.length === 0) return true
-    
-    let success = true
-    for (const channel of channels) {
-      if (!(await this.addChannel(socketId, channel))) {
-        success = false
-      }
-    }
-    return success
-  }
-
-  async removeChannel(socketId: number, channel: string) {
-    assertChannel(channel)
- 
-    const result = await this.redis.channelRemove(this.getSocketKey(socketId), CHNL, channel)
-    return result === 1
-  }
-
-  async removeChannels(socketId: number, ...channels: string[]): Promise<boolean> {
-    if (channels.length === 0) return true
-    
-    let success = true
-    for (const channel of channels) {
-      if (!(await this.removeChannel(socketId, channel))) {
-        success = false
-      }
-    }
-    return success
-  }
-
-  async getSocketsByChannel(channel: string, batch = 100): Promise<SocketWithServer[]> {
-    assertChannel(channel)
-
-    type KeyAndKey = ['__key', string]
-    type AggregateAndCursorResponse = [[1, ...KeyAndKey[]], number]
-
-    let [aggregateResult, cursor] = await this.redis.call(
-      'FT.AGGREGATE',
-      this.indexScktChnl,
-      `@${CHNL}:{${channel}}`,
-      'LOAD', 1, '@__key',
-      'WITHCURSOR',
-      'COUNT', batch,
-    ) as AggregateAndCursorResponse
-
-    const keys: string[] = []
-  
-    while (true) {
-      keys.push(...((aggregateResult.slice(1) as KeyAndKey[]).map(([_key, key]) => key)))
-      if (!cursor) {
-        break
-      }
-
-      [aggregateResult, cursor] = await this.redis.call(
-        'FT.CURSOR', 'READ', this.indexScktChnl, cursor
-      ) as AggregateAndCursorResponse
-    }
-
-    const hgetResults = await this.redis.pipeline(
-      keys.map((k) => ['hget', k, SRVR]),
-    ).exec()
-
-    if (!hgetResults) {
-      throw new Error('multiple hget error')
-    }
-
-    const results: SocketWithServer[] = []
-
-    for (const [index, key] of keys.entries()) {
-      const [err, serverId] = hgetResults[index]
-
-      if (err) {
-        continue
-      }
-
-      results.push({
-        [SCKT]: Number(key.substring(this.prefixSocket.length)),
-        [SRVR]: Number(serverId),
-      })
-    }    
-
-    return results
-  }
-
-  async getSocketSidsByChannel(channel: string, batch = 100): Promise<number[]> {
-    assertChannel(channel)
-
-    type KeyAndKey = ['__key', string]
-    type AggregateAndCursorResponse = [[1, ...KeyAndKey[]], number]
-
-    let [aggregateResult, cursor] = await this.redis.call(
-      'FT.AGGREGATE',
-      this.indexScktChnl,
-      `@${CHNL}:{${channel}}`,
-      'LOAD', 1, '@__key',
-      'WITHCURSOR',
-      'COUNT', batch,
-    ) as AggregateAndCursorResponse
-
-    const keys: string[] = []
-  
-    while (true) {
-      keys.push(...((aggregateResult.slice(1) as KeyAndKey[]).map(([_key, key]) => key)))
-      if (!cursor) {
-        break
-      }
-
-      [aggregateResult, cursor] = await this.redis.call(
-        'FT.CURSOR', 'read', this.indexScktChnl, cursor
-      ) as AggregateAndCursorResponse
-    }
-
-    const hgetResults = await this.redis.pipeline(
-      keys.map((k) => ['hget', k, SID]),
-    ).exec()
-
-    if (!hgetResults) {
-      throw new Error('multiple hget error')
-    }
-
-    const results: number[] = []
-
-    for (const [index] of keys.entries()) {
-      const [err, sessionId] = hgetResults[index]
-
-      if (err || !sessionId) {
-        continue
-      }
-
-      results.push(Number(sessionId))
-    }
-
-    return results
-  }
-
-  async getSocketData(socketId: number): Promise<[number, string] | null> {
-    const values = await this.redis.hmget(this.getSocketKey(socketId), SID, CHNL)
-    
-    if (!values || values[0] === null || values[1] === null) {
-      return null
-    }
-
-    const sessionId = Number(values[0])
-    const channelsString = values[1].split(',').slice(1, -1).join(',') // Remove surrounding commas
-    
-    return [sessionId, channelsString]
-  }
-
-  async getSocketFieldsByChannel<F extends keyof Socket>(channel: string, batch = 100, ...fields: F[]): Promise<Array<[number, Pick<Socket, F>]>> {
-    assertChannel(channel)
-    assertSocketFields(fields)
-
-    type KeyAndKey = ['__key', string]
-    type AggregateAndCursorResponse = [[1, ...KeyAndKey[]], number]
-
-    let [aggregateResult, cursor] = await this.redis.call(
-      'FT.AGGREGATE',
-      this.indexScktChnl,
-      `@${CHNL}:{${channel}}`,
-      'LOAD', 1, '@__key',
-      'WITHCURSOR',
-      'COUNT', batch,
-    ) as AggregateAndCursorResponse
-
-    const keys: string[] = []
-  
-    while (true) {
-      keys.push(...((aggregateResult.slice(1) as KeyAndKey[]).map(([_key, key]) => key)))
-      if (!cursor) {
-        break
-      }
-
-      [aggregateResult, cursor] = await this.redis.call(
-        'FT.CURSOR', 'read', this.indexScktChnl, cursor
-      ) as AggregateAndCursorResponse
-    }
-
-    const hmgetResults = await this.redis.pipeline(
-      keys.map((k) => ['hmget', k, ...fields]),
-    ).exec()
-
-    if (!hmgetResults) {
-      throw new Error('multiple hmget error')
-    }
-
-    const results: Array<[number, Pick<Socket, F>]> = []
-
-    for (const [index, key] of keys.entries()) {
-      const [err, values] = hmgetResults[index]
-
-      if (err || !values || (values as any[]).some((v: any) => v === null)) {
-        continue
-      }
-
-      const socketId = Number(key.substring(this.prefixSocket.length))
-      const socketData = fields.reduce((acc, field, fieldIndex) => {
-        const value = (values as any[])[fieldIndex]
-        if (field === CHNL) {
-          (acc as any)[field] = value.split(',').slice(1, -1)
-        } else {
-          (acc as any)[field] = Number(value)
-        }
-        return acc
-      }, {} as Pick<Socket, F>)
-
-      results.push([socketId, socketData])
-    }
-
-    return results
-  }
-
   protected getSocketKey(socketId: number) {
     return this.prefixSocket + socketId
+  }
+
+  protected getSocketIdFromKey(key: string) {
+    return Number(key.substring(this.prefixSocket.length))
   }
 
   protected getMigrationsKey() {
@@ -357,76 +263,127 @@ export class WSDiscovery {
     return this.getMigrationsKey() + '_lock'
   }
 
+  /**
+   * @returns redis keys of the sockets that are in the channel
+   */
+  protected async getKeysByChannel(channel: string, batch: number) {
+    assertChannel(channel)
+
+    let response = await this.redis.call(
+      'FT.AGGREGATE',
+      this.indexScktChnl,
+      `@${CHNL}:{${escapeTag(channel)}}`,
+      'LOAD', 1, '@__key',
+      'WITHCURSOR',
+      'COUNT', batch,
+    ) as AggregateResponse
+
+    const keys: string[] = []
+
+    while (true) {
+      const [[_count, ...rows], cursor] = response
+
+      for (const [_name, key] of rows) {
+        keys.push(key)
+      }
+
+      if (!cursor) {
+        return keys
+      }
+
+      response = await this.redis.call(
+        'FT.CURSOR', 'READ', this.indexScktChnl, cursor,
+      ) as AggregateResponse
+    }
+  }
+
+  protected async pipeline(commands: string[][]) {
+    const results = await this.redis.pipeline(commands).exec()
+    // null is possible only for a discarded MULTI, not for a pipeline
+    return results as Array<[Error | null, unknown]>
+  }
+
   protected async lock({
-    attempts, 
+    attempts,
     key,
     sleepMs,
     token,
-    ttlMs: ttl,
+    ttlMs,
   }: LockOpts) {
-
     for (let i = 0; i < attempts; ++i) {
-      const result = await this.redis.set(key, token, 'PX', ttl, 'NX')
+      const result = await this.redis.set(key, token, 'PX', ttlMs, 'NX')
       if (result) {
         return
       }
 
       await sleep(sleepMs)
     }
-    throw new Error(`can not take redis lock on key=${key}`)  
+    throw new Error(`can not take redis lock on key=${key}`)
   }
 
   protected async unlock(key: string, token: string) {
-    await this.redis.eval(`
-      if redis.call("get",KEYS[1]) == ARGV[1] then
-          return redis.call("del",KEYS[1])
-      else
-          return 0
-      end
-    `, 1, key, token)
+    await this.redis.eval(unlock, 1, key, token)
   }
 
-  protected async defineCommands() {
-    type ScriptData = {
-      keys: number
-      readOnly: boolean
-    }    
-    const scripts: Record<CustomScripts, ScriptData> = {
-      [CustomScripts.CHANNEL_ADD]: {
-        keys: 1,
-        readOnly: false,
-      },
-      [CustomScripts.CHANNEL_REMOVE]: {
-        keys: 1,
-        readOnly: false,
-      },
-      [CustomScripts.INC_WITH_RESET]: {
-        keys: 1,
-        readOnly: false,
-      },
-      [CustomScripts.HSET_WITH_TTL]: {
-        keys: 1,
-        readOnly: false,
-      }
+  protected defineCommands() {
+    for (const [name, { lua, numberOfKeys }] of Object.entries(SCRIPTS)) {
+      this.redis.defineCommand(name, { lua, numberOfKeys })
+    }
+  }
+
+  protected async getIndexInfo(index: string) {
+    const indexes = await this.redis.call('FT._LIST') as string[]
+    if (!indexes.includes(index)) {
+      return null
     }
 
-    for (const [scriptName, scriptData] of Object.entries(scripts)) {
-      this.redis.defineCommand(scriptName, {
-        lua: await readFile(resolve(__dirname, '..', LUA, `${scriptName}.${LUA}`), 'utf8'),
-        numberOfKeys: scriptData.keys,
-        readOnly: scriptData.readOnly,
-      })
+    // flat array: [name1, value1, name2, value2, ...]
+    const flat = await this.redis.call('FT.INFO', index) as unknown[]
+    const info: Record<string, unknown> = {}
+    for (let i = 0; i < flat.length; i += 2) {
+      info[flat[i] as string] = flat[i + 1]
+    }
+
+    return info
+  }
+
+  // m1: channels are case sensitive, so the index is case sensitive too
+  protected async migrateIndexCreate() {
+    if (!await this.getIndexInfo(this.indexScktChnl)) {
+      await this.redis.call(
+        'FT.CREATE', this.indexScktChnl,
+        'PREFIX', 1, this.prefixSocket,
+        'SCHEMA', CHNL, 'TAG', 'CASESENSITIVE',
+      )
+    }
+
+    // search results are not complete until the indexing is finished
+    while (true) {
+      const { indexing } = (await this.getIndexInfo(this.indexScktChnl))!
+      if (Number(indexing) === 0) {
+        return
+      }
+      await sleep(100)
+    }
+  }
+
+  // m2: hashes are not deleted, only the index is dropped
+  protected async migrateIndexDropLegacy() {
+    if (await this.getIndexInfo(this.indexScktChnlLegacy)) {
+      await this.redis.call('FT.DROPINDEX', this.indexScktChnlLegacy)
     }
   }
 
   protected async migrate() {
-    const migrations: Array<[string, string[]]> = [
-      ['FT.CREATE', `${this.indexScktChnl} PREFIX 1 ${this.prefixSocket} SCHEMA ${CHNL} TAG`.split(' ')],
+    // m0 created the legacy index in the first version, the id is not used anymore
+    const migrations: Array<[string, () => Promise<void>]> = [
+      ['m1', () => this.migrateIndexCreate()],
+      ['m2', () => this.migrateIndexDropLegacy()],
     ]
 
     const token = `${Date.now()}_${Math.floor(Math.random() * 99999999)}`
     const lockKey = this.getMigrationsLockKey()
-  
+
     await this.lock({
       attempts: 60,
       key: lockKey,
@@ -434,24 +391,21 @@ export class WSDiscovery {
       token,
       ttlMs: 30_000,
     })
-    
-    const migrationsKey = this.getMigrationsKey()
-    for (let i = 0; i < migrations.length; ++i) {
-      const migrationId = 'm' + i 
-      const applied = await this.redis.sismember(migrationsKey, migrationId)
-      if (applied) {
-        continue
+
+    try {
+      const migrationsKey = this.getMigrationsKey()
+
+      for (const [migrationId, migration] of migrations) {
+        if (await this.redis.sismember(migrationsKey, migrationId)) {
+          continue
+        }
+
+        // The migration is marked as applied only after it has succeeded
+        await migration()
+        await this.redis.sadd(migrationsKey, migrationId)
       }
-
-      const migration = migrations[i]
-      // TODO there can be logical errors inside transaction!!
-      await this.redis
-        .multi()
-        .call(migration[0], migration[1])
-        .sadd(migrationsKey, migrationId)
-        .exec()
+    } finally {
+      await this.unlock(lockKey, token)
     }
-
-    await this.unlock(lockKey, token)
   }
 }

@@ -14,9 +14,7 @@
       "program": "${file}",
       "runtimeArgs": [
         "--test",
-        "--test-concurrency=1",
-        "--require",
-        "ts-node/register"
+        "--test-concurrency=1"
       ],
       "env": {
         "NODE_ENV": "test"

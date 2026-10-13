@@ -9,49 +9,33 @@ on:
 
 jobs:
   test:
-    strategy:
-      matrix:
-        redis:
-          - image: redis/redis-stack-server:7.2.0-v13
-            coverage: false
-          - image: redis:8.0.2-alpine
-            coverage: true
-
     runs-on: ubuntu-latest
-    container: node:20-alpine
+    container: node:26-alpine
 
     services:
       redis:
-        image: ${{ matrix.redis.image }}
+        image: redis:8.10.2-alpine
+
+    env:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - run: yarn install --frozen-lockfile
+      - run: npm ci
 
-      - run: yarn compile
+      - run: npm run compile
 
-      - run: echo "COVERAGE=${{ matrix.redis.coverage }}" >> "$GITHUB_ENV"
+      - run: npm run build
 
-      - if: env.COVERAGE == 'true'
-        run: yarn test:coverage
-        env:
-          REDIS_HOST: redis
-          REDIS_PORT: 6379
+      - run: npm run test:coverage
 
-      - if: env.COVERAGE != 'true'
-        run: yarn test:all
-        env:
-          REDIS_HOST: redis
-          REDIS_PORT: 6379
+      - run: apk add git curl gnupg coreutils
 
-      - if: env.COVERAGE == 'true'
-        run: apk add git curl gnupg coreutils
-
-      - if: env.COVERAGE == 'true'
-        uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true
-          file: ./coverage/lcov.info
+          files: ./coverage/lcov.info
           os: alpine
           token: ${{ secrets.CODECOV_TOKEN }}
